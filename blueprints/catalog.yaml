@@ -1,0 +1,13 @@
+apiVersion: ai-factory.suse.com/v1alpha1
+kind: BlueprintCatalog
+metadata:
+  name: partner-blueprints
+spec:
+  displayName: SUSE AI Factory Partner Blueprints
+  description: Partner blueprints for SUSE AI Factory.
+  categories: [rag, inference, agents]
+  blueprints:
+    - name: my-awesome-blueprint-1-0-0
+      file: example.com/my-awesome-blueprint/1.0.0/my-awesome-blueprint-1-0-0.yaml
+    - name: my-awesome-blueprint-1-1-0
+      file: example.com/my-awesome-blueprint/1.1.0/my-awesome-blueprint-1-1-0.yaml

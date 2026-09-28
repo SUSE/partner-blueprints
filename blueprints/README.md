@@ -14,12 +14,22 @@ Each top-level folder here belongs to one partner.
 
 - **Partner**: company name or domain, lowercase (e.g. `acme`, `example.com`).
 - **Blueprint**: lowercase, hyphen-separated (e.g. `rag-chatbot`).
-- **Version**: `MAJOR.MINOR` (e.g. `1.0`, `1.1`). Create a new folder for each release instead of modifying a published one.
+- **Version**: `MAJOR.MINOR.PATCH` (e.g. `1.0.0`, `1.1.0`). Create a new folder for each release instead of modifying a published one.
+
+## Catalog
+
+[`catalog.yaml`](catalog.yaml) is a `BlueprintCatalog` (`ai-factory.suse.com/v1alpha1`) listing every blueprint in this repository. Add one entry per blueprint version under `spec.blueprints`, with `name` (version dots replaced by dashes) and `file` (path relative to `catalog.yaml`):
+
+```yaml
+    - name: my-awesome-blueprint-1-1-0
+      file: example.com/my-awesome-blueprint/1.1.0/my-awesome-blueprint-1-1-0.yaml
+```
 
 ## What a version should include
 
+- `<blueprint>-<X-Y-Z>.yaml` (e.g. `my-awesome-blueprint-1-1-0.yaml`): the `Blueprint` manifest (`ai-factory.suse.com/v1alpha1`).
 - `README.md` with prerequisites, deployment steps, validation and cleanup.
-- Deployment artifacts (Helm values, manifests, scripts) as needed.
+- Extra artifacts (Helm values, scripts) as needed.
 - Declared compatibility: SUSE AI Factory version, with/without NVIDIA, tested hardware.
 
 ## Partners

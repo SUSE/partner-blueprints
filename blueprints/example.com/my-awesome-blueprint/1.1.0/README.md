@@ -1,4 +1,4 @@
-# my-awesome-blueprint 1.1
+# my-awesome-blueprint 1.1.0
 
 ## Compatibility
 
@@ -43,4 +43,4 @@ helm uninstall my-awesome-blueprint
 
 ## Changelog
 
-- Example changes since 1.0.
+- Example changes since 1.0.0.

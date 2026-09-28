@@ -13,4 +13,4 @@ Short description of the partner and what it brings to SUSE AI Factory.
 
 | Blueprint | Description | Latest version | NVIDIA |
 |-----------|-------------|----------------|--------|
-| [my-awesome-blueprint](my-awesome-blueprint) | Example blueprint | [1.1](my-awesome-blueprint/1.1) | Optional |
+| [my-awesome-blueprint](my-awesome-blueprint) | Example blueprint | [1.1.0](my-awesome-blueprint/1.1.0) | Optional |

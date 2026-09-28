@@ -26,5 +26,5 @@ High-level description or diagram of how the components run on SUSE AI Factory.
 
 | Version | SUSE AI Factory | Status | Notes |
 |---------|-----------------|--------|-------|
-| [1.1](1.1) | x.y | Current | See changelog in version README |
-| [1.0](1.0) | x.y | Deprecated | Initial release |
+| [1.1.0](1.1.0) | x.y | Current | See changelog in version README |
+| [1.0.0](1.0.0) | x.y | Deprecated | Initial release |

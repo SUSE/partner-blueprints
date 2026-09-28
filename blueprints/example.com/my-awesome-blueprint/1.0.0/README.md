@@ -1,4 +1,4 @@
-# my-awesome-blueprint 1.0
+# my-awesome-blueprint 1.0.0
 
 ## Compatibility
 
