@@ -1,0 +1,10 @@
+# GENERATED FILE - do not edit the blueprints list by hand.
+# Regenerate with: python scripts/catalog.py gen
+apiVersion: ai-factory.suse.com/v1alpha1
+kind: BlueprintCatalog
+metadata:
+  name: partner-catalog
+spec:
+  displayName: Partner Blueprints
+  description: Community and partner-contributed blueprints for SUSE AI Factory.
+  blueprints: []

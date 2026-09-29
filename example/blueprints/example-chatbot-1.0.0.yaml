@@ -1,0 +1,41 @@
+# Example partner Blueprint. Copy this file into your own partner folder
+# (partners/<your-partner>/blueprints/) and adapt it. See CONTRIBUTING.md.
+#
+# Conventions the CI enforces:
+#   * filename must be <blueprint-name>-<version>.yaml
+#   * metadata.name must be <blueprint-name>-<version> with dots -> dashes
+#   * the two blueprint-* labels must match the filename and spec.version
+#   * spec.source must be "Custom" for partner blueprints
+apiVersion: ai-factory.suse.com/v1alpha1
+kind: Blueprint
+metadata:
+  name: example-chatbot-1-0-0
+  labels:
+    ai-factory.suse.com/blueprint-name: example-chatbot
+    ai-factory.suse.com/blueprint-version: 1.0.0
+    # Optional: adds this blueprint to a category in the aggregate catalog.
+    ai-factory.suse.com/category: rag
+spec:
+  source: Custom
+  displayName: Example Chatbot
+  version: 1.0.0
+  description: |
+    A minimal single-component example blueprint used as a template for partner
+    submissions. Replace the component(s) below with your own Helm charts and
+    values. Keep the description accurate: prerequisites (StorageClass,
+    cert-manager, GPUs), exposed endpoints, and any licensing notes belong here.
+  components:
+    - chartName: open-webui
+      chartRepo: application-collection
+      chartVersion: 8.19.1
+      values:
+        image:
+          registry: dp.apps.rancher.io
+          repository: containers/open-webui
+        persistence:
+          enabled: true
+          size: 20Gi
+        ingress:
+          enabled: true
+          host: example-chatbot
+          tls: true
