@@ -1,0 +1,34 @@
+name: Partner onboarding
+description: Request a new partner folder in the blueprints catalog
+title: "[onboarding] <partner name>"
+labels: ["onboarding"]
+body:
+  - type: input
+    id: partner
+    attributes:
+      label: Partner name (folder slug)
+      description: Lowercase, dash-separated. Becomes partners/<slug>/.
+      placeholder: acme
+    validations:
+      required: true
+  - type: input
+    id: maintainer
+    attributes:
+      label: Maintainer contact
+      placeholder: name / email or URL
+    validations:
+      required: true
+  - type: textarea
+    id: blueprints
+    attributes:
+      label: Blueprints you plan to publish
+      description: Rough list — names and what they deploy.
+    validations:
+      required: false
+  - type: checkboxes
+    id: ack
+    attributes:
+      label: Acknowledgements
+      options:
+        - label: I have read CONTRIBUTING.md
+          required: true
