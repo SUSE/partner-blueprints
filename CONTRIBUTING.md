@@ -33,7 +33,8 @@ partners; you only ever touch your own `partners/<partner>/` folder.
 | filename = `<blueprint-name>-<version>.yaml` | predictable layout |
 | `metadata.name` = `<name>-<version>` with dots→dashes | operator slug convention |
 | labels `blueprint-name` / `blueprint-version` match filename & `spec.version` | no drift |
-| `spec.source: Custom` | partner blueprints are Custom-sourced |
+| `spec.source: Partner` | partner blueprints are labelled Partner, never SUSE or Nvidia |
+| optional `spec.icon`: `https://` URL on a public DNS hostname, or a base64 `png`/`gif`/`jpeg`/`webp` `data:` URI, max 16384 characters (no `http://`, SVG, IP addresses or internal hostnames) | the UI only renders icons that meet these rules |
 | required: `displayName`, `description`, `components` | usable catalog entry |
 | the CR validates against the live Blueprint CRD schema | valid on the cluster |
 | a `blueprint-name` is owned by exactly one partner | no cross-partner collisions |
@@ -55,5 +56,9 @@ A SUSE maintainer merges once checks pass and reviews approve.
 - Pin chart versions and image tags — reproducibility matters in air-gapped installs.
 - Put prerequisites (StorageClass, cert-manager, GPUs), exposed endpoints, and
   any model/licensing notes in `spec.description`.
+- For `spec.icon`, prefer a small `data:` URI (a 64×64 PNG or WebP is plenty):
+  it renders in air-gapped clusters, where an `https://` logo cannot load. Keep
+  it inline in the blueprint; don't commit image files under `partners/`,
+  since Fleet ships everything under that path to every cluster.
 - Prefer stable in-cluster service names (`fullnameOverride`) over release-name
   coupling, so a blueprint installs under any namespace.

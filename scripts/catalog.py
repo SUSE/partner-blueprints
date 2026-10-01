@@ -16,7 +16,9 @@ partner ever needs custom key ordering in catalog.yaml, template it here instead
 import argparse
 import glob
 import os
+import re
 import sys
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -26,6 +28,21 @@ CATALOG_FILE = os.path.join(ROOT, "catalog.yaml")
 NAME_LABEL = "ai-factory.suse.com/blueprint-name"
 VERSION_LABEL = "ai-factory.suse.com/blueprint-version"
 CATEGORY_LABEL = "ai-factory.suse.com/category"
+
+# Partner blueprints always declare source Partner, so a submission cannot claim
+# SUSE or Nvidia provenance. Needs an operator whose CRD includes Partner.
+PARTNER_SOURCE = "Partner"
+
+# spec.icon rules. The CRD enforces the scheme, raster types and size; the host
+# rules mirror the SUSE AI Factory UI (browserSafeBlueprintIcon), which silently
+# skips icons pointing at IP addresses or internal names. Checking here tells
+# the partner at PR time instead of shipping a logo that never renders.
+ICON_MAX_LENGTH = 16384
+DATA_ICON = re.compile(r"^data:image/(png|gif|jpeg|webp);base64,[A-Za-z0-9+/=]+$")
+HTTPS_ICON = re.compile(r"^https://[^\s\"'<>/][^\s\"'<>]*$")
+DNS_HOST = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)+$")
+NUMERIC_LABEL = re.compile(r"^(\d+|0x[0-9a-f]*)$")
+PRIVATE_HOST_SUFFIX = re.compile(r"\.(localhost|local|internal|svc)$")
 
 # Static header of the aggregate catalog. Edit branding here — the blueprints
 # list and categories below are generated from the partner folders.
@@ -62,6 +79,39 @@ def partner_of(path):
     """partners/acme/blueprints/x.yaml -> acme ; example/blueprints/x.yaml -> example"""
     parts = os.path.relpath(path, ROOT).replace("\\", "/").split("/")
     return parts[1] if parts[0] == "partners" else parts[0]
+
+
+def icon_errors(icon):
+    """Return errors for an optional spec.icon value (empty list if valid)."""
+    if icon is None:
+        return []
+    if not isinstance(icon, str) or not icon:
+        return ["spec.icon must be a non-empty string when set"]
+    if len(icon) > ICON_MAX_LENGTH:
+        return [f"spec.icon is {len(icon)} characters; the limit is {ICON_MAX_LENGTH}"]
+    if icon.startswith("data:"):
+        if DATA_ICON.match(icon):
+            return []
+        return ["spec.icon data: URI must be base64 png, gif, jpeg or webp "
+                "(data:image/<type>;base64,...); SVG is not allowed"]
+    if not HTTPS_ICON.match(icon):
+        return ["spec.icon must be an https:// URL or a base64 raster data: URI "
+                "(http:// is not allowed)"]
+    try:
+        host = (urlsplit(icon).hostname or "").rstrip(".")
+    except ValueError:
+        host = ""
+    # Plain ASCII DNS names only: the browser would decode percent-encoding,
+    # IDN and full-width dots before resolving, so allowing them hides the real host.
+    if not DNS_HOST.match(host):
+        return ["spec.icon must use a public DNS hostname (no IP address, "
+                "single-label, percent-encoded or non-ASCII host)"]
+    if NUMERIC_LABEL.match(host.rsplit(".", 1)[-1]):
+        return ["spec.icon must use a public DNS hostname, not an IP address"]
+    if PRIVATE_HOST_SUFFIX.search(host):
+        return ["spec.icon must not point at an internal hostname "
+                "(.localhost, .local, .internal, .svc)"]
+    return []
 
 
 def check_file(path):
@@ -105,6 +155,9 @@ def check_file(path):
     for field in ("displayName", "description", "components", "source"):
         if not spec.get(field):
             errors.append(f"spec.{field} is required")
+    if spec.get("source") and spec.get("source") != PARTNER_SOURCE:
+        errors.append(f"spec.source must be '{PARTNER_SOURCE}', got {spec.get('source')!r}")
+    errors.extend(icon_errors(spec.get("icon")))
 
     info = {
         "name": name,
@@ -221,10 +274,10 @@ def main():
             stream.reconfigure(encoding="utf-8")  # emoji-safe on Windows consoles
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("validate")
+    v = sub.add_parser("validate")
+    v.add_argument("--summary", help="write the markdown summary to this file")
     g = sub.add_parser("gen")
     g.add_argument("--check", action="store_true", help="fail if catalog.yaml is stale")
-    ap.add_argument("--summary", help="write the markdown summary to this file")
     args = ap.parse_args()
 
     if args.cmd == "validate":
