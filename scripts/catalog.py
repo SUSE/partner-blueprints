@@ -274,10 +274,10 @@ def main():
             stream.reconfigure(encoding="utf-8")  # emoji-safe on Windows consoles
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("validate")
+    v = sub.add_parser("validate")
+    v.add_argument("--summary", help="write the markdown summary to this file")
     g = sub.add_parser("gen")
     g.add_argument("--check", action="store_true", help="fail if catalog.yaml is stale")
-    ap.add_argument("--summary", help="write the markdown summary to this file")
     args = ap.parse_args()
 
     if args.cmd == "validate":

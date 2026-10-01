@@ -65,7 +65,7 @@ jobs:
           find partners example catalog.yaml -name '*.yaml' -print0 \
             | xargs -0 kubeconform \
                 -strict -summary \
-                -schema-location 'schemas/{{ .ResourceKind | toLower }}_{{ .ResourceAPIVersion }}.json'
+                -schema-location 'schemas/{{ .ResourceKind }}_{{ .ResourceAPIVersion }}.json'
 
       - name: Convention checks
         id: conventions
