@@ -17,6 +17,8 @@ env:
   # Blueprint/BlueprintCatalog CRDs are fetched live from the operator repo so
   # validation always tracks the current, evolving schema. Pin CRD_REF to a tag
   # partners should target, or leave on main to validate against latest.
+  # spec.source: Partner and spec.icon need a CRD that includes them; on main
+  # that holds once the aif change adding them is merged.
   CRD_REPO: SUSE/aif
   CRD_REF: main
   CRD_BLUEPRINT: charts/aif-operator/crds/ai-factory.suse.com_blueprints.yaml

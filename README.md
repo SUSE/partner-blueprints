@@ -41,6 +41,11 @@ blueprintCatalogs:
 Fleet applies every `Blueprint` under `partners/**` plus the aggregate
 `BlueprintCatalog`, and garbage-collects anything removed from the repo.
 
+Partner blueprints use `spec.source: Partner` and may set an optional
+`spec.icon`. Both need an aif-operator whose Blueprint CRD includes them;
+older operators (2.2.0 and earlier) reject `source: Partner`, so Fleet cannot
+apply these blueprints on those clusters.
+
 ## Contributing a blueprint
 
 1. Read [CONTRIBUTING.md](CONTRIBUTING.md).
