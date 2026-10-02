@@ -20,9 +20,9 @@ partners; you only ever touch your own `partners/<partner>/` folder.
 3. Run the checks locally before pushing:
    ```bash
    python scripts/catalog.py validate
-   python scripts/catalog.py gen          # updates catalog.yaml
+   python scripts/catalog.py gen          # updates partners/catalog.yaml
    ```
-4. Commit **both** your blueprint and the regenerated `catalog.yaml`, then open
+4. Commit **both** your blueprint and the regenerated `partners/catalog.yaml`, then open
    a PR.
 
 ## Rules CI enforces
@@ -38,7 +38,7 @@ partners; you only ever touch your own `partners/<partner>/` folder.
 | required: `displayName`, `description`, `components` | usable catalog entry |
 | the CR validates against the live Blueprint CRD schema | valid on the cluster |
 | a `blueprint-name` is owned by exactly one partner | no cross-partner collisions |
-| `catalog.yaml` is regenerated (not stale) | aggregate never drifts |
+| `partners/catalog.yaml` is regenerated (not stale) | aggregate never drifts |
 
 ## Review
 
