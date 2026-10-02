@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
-"""Validate partner blueprints and (re)generate the aggregate root catalog.
+"""Validate partner blueprints and (re)generate the aggregate catalog.
 
 Subcommands:
   validate            Check every Blueprint CR under partners/ and example/.
-  gen                 Rewrite catalog.yaml's membership from partners/**.
-  gen --check         Fail (non-zero) if catalog.yaml is stale, changing nothing.
+  gen                 Rewrite partners/catalog.yaml's membership from partners/**.
+  gen --check         Fail (non-zero) if partners/catalog.yaml is stale, changing nothing.
 
 A Blueprint file must live at  partners/<partner>/blueprints/<name>-<version>.yaml
 and carry matching labels (see check_file). The example/ tree is validated the
 same way but is never added to the aggregate catalog.
 
 Output is deterministic (sorted membership) so the CI drift check is stable; if a
-partner ever needs custom key ordering in catalog.yaml, template it here instead.
+partner ever needs custom key ordering in partners/catalog.yaml, template it here instead.
 """
 import argparse
 import glob
@@ -23,7 +23,7 @@ from urllib.parse import urlsplit
 import yaml
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CATALOG_FILE = os.path.join(ROOT, "catalog.yaml")
+CATALOG_FILE = os.path.join(ROOT, "partners", "catalog.yaml")
 
 NAME_LABEL = "ai-factory.suse.com/blueprint-name"
 VERSION_LABEL = "ai-factory.suse.com/blueprint-version"
@@ -258,9 +258,9 @@ def gen(check_only):
             with open(CATALOG_FILE, encoding="utf-8") as fh:
                 current = fh.read()
         if current != text:
-            print("❌ catalog.yaml is stale. Run: python scripts/catalog.py gen", file=sys.stderr)
+            print("❌ partners/catalog.yaml is stale. Run: python scripts/catalog.py gen", file=sys.stderr)
             return False
-        print("✅ catalog.yaml is up to date.")
+        print("✅ partners/catalog.yaml is up to date.")
         return True
     with open(CATALOG_FILE, "w", encoding="utf-8", newline="\n") as fh:
         fh.write(text)
@@ -277,7 +277,7 @@ def main():
     v = sub.add_parser("validate")
     v.add_argument("--summary", help="write the markdown summary to this file")
     g = sub.add_parser("gen")
-    g.add_argument("--check", action="store_true", help="fail if catalog.yaml is stale")
+    g.add_argument("--check", action="store_true", help="fail if partners/catalog.yaml is stale")
     args = ap.parse_args()
 
     if args.cmd == "validate":

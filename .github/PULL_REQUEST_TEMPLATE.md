@@ -8,7 +8,7 @@
 
 - [ ] Files live under `partners/<partner>/blueprints/`
 - [ ] Ran `python scripts/catalog.py validate` locally — passes
-- [ ] Ran `python scripts/catalog.py gen` and committed the updated `catalog.yaml`
+- [ ] Ran `python scripts/catalog.py gen` and committed the updated `partners/catalog.yaml`
 - [ ] `spec.description` lists prerequisites, exposed endpoints, and any licensing notes
 - [ ] Chart versions and image tags are pinned
 - [ ] `spec.source` is `Partner`; `spec.icon` (if set) is a small `data:` URI or an `https://` URL you control
