@@ -117,8 +117,8 @@ spec:
       before this blueprint. It is cluster-wide, so it is not a component
       here. The driver and container toolkit can be deployed by the operator
       (the containerized driver, which SUSE publishes for SUSE Linux
-      Enterprise Server 16) or installed on the host. Klique needs these
-      operator values.
+      Enterprise Server 15 SP7 and 16) or installed on the host. Klique
+      needs these operator values.
 
       For fractional-gpu-injector: the Klique build of the device plugin and
       eight renamed time-slices per GPU.
