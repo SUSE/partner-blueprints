@@ -116,8 +116,9 @@ spec:
       Install the official NVIDIA GPU Operator as a cluster administrator
       before this blueprint. It is cluster-wide, so it is not a component
       here. The driver and container toolkit can be deployed by the operator
-      (the containerized driver, recommended on SUSE Linux Enterprise
-      Server) or installed on the host. Klique needs these operator values.
+      (the containerized driver, which SUSE publishes for SUSE Linux
+      Enterprise Server 16) or installed on the host. Klique needs these
+      operator values.
 
       For fractional-gpu-injector: the Klique build of the device plugin and
       eight renamed time-slices per GPU.
