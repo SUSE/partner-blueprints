@@ -30,12 +30,12 @@ spec:
       platform-management-center  management console web UI (needs the
                                   platform management server in
                                   control-plane)
-      gpu-operator                NVIDIA GPU Operator, configured for GPU
-                                  sharing
       fractional-gpu-injector     fractions of any NVIDIA GPU by time-slicing
       dynamic-mig-operator        MIG partitions on MIG-capable GPUs
     GPU sharing is a choice: keep ONE of fractional-gpu-injector and
     dynamic-mig-operator ticked, never both, or untick both for whole GPUs.
+    Both need the NVIDIA GPU Operator, which is a prerequisite and is not
+    installed by this blueprint (see NVIDIA GPU OPERATOR below).
 
     REPLACE BEFORE INSTALLING
       - every *.example.com hostname (web UI, API, files, gateway, console)
@@ -55,10 +55,9 @@ spec:
 
     PREREQUISITES
       A default StorageClass (about 120 GiB of persistent volumes), an
-      ingress controller, DNS for the hostnames above, and the "nvidia"
-      ClusterRepo (https://helm.ngc.nvidia.com/nvidia) if gpu-operator is
-      included. Klique charts and images come from an authenticated
-      registry; credentials are issued by Klique with a subscription.
+      ingress controller and DNS for the hostnames above. Klique charts and
+      images come from an authenticated registry; credentials are issued by
+      Klique with a subscription.
       Steps 1-2 are one-time cluster setup. Steps 3-5 are per install, in
       the namespace this blueprint installs into, and run BEFORE installing.
 
@@ -84,8 +83,8 @@ spec:
 
       3) Image pull secret "klique-registry-pull" in the target namespace,
          from your own registry credentials for the Klique images. It must
-         also exist in the gpu-operator, cfgi and cdmo namespaces if those
-         components are included.
+         also exist in the cfgi and cdmo namespaces if those components are
+         included, and in the gpu-operator namespace for fractional GPUs.
 
          kubectl -n <namespace> create secret docker-registry \
            klique-registry-pull --docker-server=docker.io \
@@ -113,21 +112,82 @@ spec:
       5) A TLS secret (default name klique-demo-tls) in the target namespace
          for the ingress hostnames.
 
-    GPU COMPONENTS - READ BEFORE LEAVING THEM TICKED
-      - Raise the inotify instance limit on GPU nodes before installing,
-        for example: sysctl -w fs.inotify.max_user_instances=8192 (and
-        persist it). At the kernel default of 128 the device plugin can fail
-        with "failed to create FS watcher ... too many open files".
-      - gpu-operator assumes the NVIDIA driver and container toolkit are
-        installed on the host (driver.enabled=false, toolkit.enabled=false).
-        With a host-installed toolkit, set these in
-        /etc/nvidia-container-runtime/config.toml on every GPU node:
-          accept-nvidia-visible-devices-envvar-when-unprivileged = false
-          accept-nvidia-visible-devices-as-volume-mounts = true
-        If the operator manages the toolkit instead, set toolkit.enabled=true
-        and pass the equivalent toolkit.env values.
-      - If a gpu-operator release already exists on the cluster, untick this
-        component and apply the same values to the existing release.
+    NVIDIA GPU OPERATOR (prerequisite for the two GPU-sharing components)
+      Install the official NVIDIA GPU Operator as a cluster administrator
+      before this blueprint. It is cluster-wide, so it is not a component
+      here. The driver and container toolkit can be deployed by the operator
+      (the containerized driver, recommended on SUSE Linux Enterprise
+      Server) or installed on the host. Klique needs these operator values.
+
+      For fractional-gpu-injector: the Klique build of the device plugin and
+      eight renamed time-slices per GPU.
+        gfd:
+          imagePullSecrets:
+            - klique-registry-pull
+        devicePlugin:
+          repository: docker.io/clearml
+          image: k8s-device-plugin
+          version: v0.17.2-gpu-card-selection
+          imagePullSecrets:
+            - klique-registry-pull
+          env:
+            - name: PASS_DEVICE_SPECS
+              value: "true"
+            - name: FAIL_ON_INIT_ERROR
+              value: "true"
+            - name: DEVICE_LIST_STRATEGY
+              value: volume-mounts
+            - name: DEVICE_ID_STRATEGY
+              value: uuid
+            - name: NVIDIA_VISIBLE_DEVICES
+              value: all
+            - name: NVIDIA_DRIVER_CAPABILITIES
+              value: all
+          config:
+            name: device-plugin-config
+            create: true
+            default: all-disabled
+            data:
+              all-disabled: |
+                version: v1
+                flags:
+                  migStrategy: none
+              ts: |
+                version: v1
+                flags:
+                  migStrategy: none
+                sharing:
+                  timeSlicing:
+                    renameByDefault: false
+                    failRequestsGreaterThanOne: false
+                    resources:
+                      - name: nvidia.com/gpu
+                        rename: nvidia.com/gpu-0
+                        devices: ["0"]
+                        replicas: 8
+              mig: |
+                version: v1
+                flags:
+                  migStrategy: mixed
+      Add one resources entry per GPU index (nvidia.com/gpu-1 for device
+      "1", and so on); replicas must be 8. With an operator-managed toolkit
+      also set toolkit.env:
+        ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED=false
+        ACCEPT_NVIDIA_VISIBLE_DEVICES_AS_VOLUME_MOUNTS=true
+      With a host-installed toolkit set the same two options in
+      /etc/nvidia-container-runtime/config.toml on every GPU node.
+
+      For dynamic-mig-operator: the operator's own MIG manager off.
+        migManager:
+          enabled: false
+        mig:
+          strategy: mixed
+
+      Then, for either component:
+      - Raise the inotify instance limit on GPU nodes, for example
+        sysctl -w fs.inotify.max_user_instances=8192 (and persist it). At
+        the kernel default of 128 the device plugin can fail with "failed to
+        create FS watcher ... too many open files".
       - Nothing changes on a node until it is labelled. Label the GPU nodes
         to match the ONE option you kept ticked:
           kubectl label node <node> nvidia.com/device-plugin.config=ts
@@ -135,8 +195,6 @@ spec:
         ("ts" for fractional-gpu-injector, "mig" for dynamic-mig-operator.)
         MIG nodes also need MIG mode on each GPU (nvidia-smi -i <id> -mig 1)
         and: kubectl label node <node> cdmo.clear.ml/gpu-partitioning=mig
-      - The "ts" config exposes GPU 0 only, as eight slices. Add one
-        resources entry per GPU index.
 
     AFTER INSTALL - QUEUES (second pass)
       Create a resource pool and profiles in the Klique UI (Resource
@@ -158,8 +216,7 @@ spec:
 
     LICENSING
       Klique is commercial software. Charts and images require a Klique
-      subscription; see https://klique.ai. The NVIDIA GPU Operator is
-      subject to NVIDIA's license terms.
+      subscription; see https://klique.ai.
   components:
     - chartName: control-plane
       chartRepo: klique
@@ -303,69 +360,6 @@ spec:
             hostName: klique-pmc.example.com
             ingressClassName: ''
             tlsSecretName: klique-demo-tls
-    - chartName: gpu-operator
-      chartRepo: nvidia
-      chartVersion: v26.7.1
-      targetNamespace: gpu-operator
-      values:
-        driver:
-          enabled: false
-        toolkit:
-          enabled: false
-        migManager:
-          enabled: false
-        mig:
-          strategy: mixed
-        gfd:
-          imagePullSecrets:
-            - klique-registry-pull
-        devicePlugin:
-          repository: docker.io/clearml
-          image: k8s-device-plugin
-          version: v0.17.2-gpu-card-selection
-          imagePullPolicy: Always
-          imagePullSecrets:
-            - klique-registry-pull
-          env:
-            - name: PASS_DEVICE_SPECS
-              value: 'true'
-            - name: FAIL_ON_INIT_ERROR
-              value: 'true'
-            - name: DEVICE_LIST_STRATEGY
-              value: volume-mounts
-            - name: DEVICE_ID_STRATEGY
-              value: uuid
-            - name: NVIDIA_VISIBLE_DEVICES
-              value: all
-            - name: NVIDIA_DRIVER_CAPABILITIES
-              value: all
-          config:
-            name: device-plugin-config
-            create: true
-            default: all-disabled
-            data:
-              all-disabled: |
-                version: v1
-                flags:
-                  migStrategy: none
-              ts: |
-                version: v1
-                flags:
-                  migStrategy: none
-                sharing:
-                  timeSlicing:
-                    renameByDefault: false
-                    failRequestsGreaterThanOne: false
-                    resources:
-                    - name: nvidia.com/gpu
-                      rename: nvidia.com/gpu-0
-                      devices:
-                      - "0"
-                      replicas: 8
-              mig: |
-                version: v1
-                flags:
-                  migStrategy: mixed
     - chartName: fractional-gpu-injector
       chartRepo: klique
       chartVersion: 1.0.0
