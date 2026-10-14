@@ -168,10 +168,10 @@ spec:
           # NOTE: pull-only + revocable (az acr token). For a real customer deployment,
           # mirror images into your own registry and set your own creds here instead.
           imageCredentials:
-            username: "alchemi-blueprint-pull"
+            username: "alchemi-trial-pull"
             # REQUIRED — without it the app images can't be pulled. Distributed the SAME way as
             # the partner charts. Scope map action: repositories/*/content/read (read-only).
-            password: "4iYTzPz5ZwMHGc7XDKMZtRCsgFORYLn0jLizH1kLKZ0n2pjFocjfJQQJ99CIACGhslBEqg7NAAABAZCRVMXl"
+            password: "5XndgwcC81A2NPjGY08kDVRsHKj0POHiJ4dDJJSoCii9HTqBx4pUJQQJ99CIACGhslBEqg7NAAABAZCR6ty8"
         admin:
           email: "suse-admin@alchemistudio.ai"   # first user + KC admin (== the login email)
           name: "SUSE Admin"
