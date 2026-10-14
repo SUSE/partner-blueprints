@@ -1,7 +1,7 @@
 # Example partner
 
 This folder shows the exact shape a partner submission takes. It is **not** a
-real partner and is excluded from the aggregate `catalog.yaml`, but CI validates
+real partner and is excluded from the aggregate `partners/catalog.yaml`, but CI validates
 it with the same rules, so it always stays correct.
 
 ```

@@ -5,7 +5,10 @@
 #   * filename must be <blueprint-name>-<version>.yaml
 #   * metadata.name must be <blueprint-name>-<version> with dots -> dashes
 #   * the two blueprint-* labels must match the filename and spec.version
-#   * spec.source must be "Custom" for partner blueprints
+#   * spec.source must be "Partner" for partner blueprints
+#   * spec.icon is optional; if set it must be an https:// URL on a public
+#     hostname or a base64 png/gif/jpeg/webp data: URI (max 16384 chars).
+#     Prefer a data: URI so the logo also shows in air-gapped installs.
 apiVersion: ai-factory.suse.com/v1alpha1
 kind: Blueprint
 metadata:
@@ -16,7 +19,9 @@ metadata:
     # Optional: adds this blueprint to a category in the aggregate catalog.
     ai-factory.suse.com/category: rag
 spec:
-  source: Custom
+  source: Partner
+  # Optional partner logo, shown beside the source badge on the blueprint card.
+  # icon: data:image/png;base64,iVBORw0KGgo...
   displayName: Example Chatbot
   version: 1.0.0
   description: |

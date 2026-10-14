@@ -5,7 +5,6 @@ on:
     paths:
       - "partners/**"
       - "example/**"
-      - "catalog.yaml"
       - "scripts/**"
   workflow_dispatch: {}
 
@@ -17,6 +16,8 @@ env:
   # Blueprint/BlueprintCatalog CRDs are fetched live from the operator repo so
   # validation always tracks the current, evolving schema. Pin CRD_REF to a tag
   # partners should target, or leave on main to validate against latest.
+  # spec.source: Partner and spec.icon need a CRD that includes them; on main
+  # that holds once the aif change adding them is merged.
   CRD_REPO: SUSE/aif
   CRD_REF: main
   CRD_BLUEPRINT: charts/aif-operator/crds/ai-factory.suse.com_blueprints.yaml
@@ -47,7 +48,7 @@ jobs:
           tar xzf kubeconform.tar.gz -C /usr/local/bin kubeconform
 
       - name: yamllint
-        run: yamllint partners example catalog.yaml
+        run: yamllint partners example
 
       - name: Fetch CRDs and build schemas
         run: |
@@ -60,10 +61,10 @@ jobs:
         id: kubeconform
         continue-on-error: true
         run: |
-          find partners example catalog.yaml -name '*.yaml' -print0 \
+          find partners example -name '*.yaml' -print0 \
             | xargs -0 kubeconform \
                 -strict -summary \
-                -schema-location 'schemas/{{ .ResourceKind | toLower }}_{{ .ResourceAPIVersion }}.json'
+                -schema-location 'schemas/{{ .ResourceKind }}_{{ .ResourceAPIVersion }}.json'
 
       - name: Convention checks
         id: conventions
