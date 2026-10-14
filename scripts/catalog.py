@@ -242,12 +242,21 @@ def build_catalog():
     return doc
 
 
+class IndentedDumper(yaml.SafeDumper):
+    """SafeDumper that indents list items under their key, as yamllint's
+    default indentation rule (indent-sequences: true) expects."""
+
+    def increase_indent(self, flow=False, indentless=False):
+        return super().increase_indent(flow, False)
+
+
 def dump_catalog(doc):
     header = (
         "# GENERATED FILE - do not edit the blueprints list by hand.\n"
         "# Regenerate with: python scripts/catalog.py gen\n"
     )
-    return header + yaml.safe_dump(doc, sort_keys=False, default_flow_style=False)
+    return header + yaml.dump(doc, Dumper=IndentedDumper, sort_keys=False,
+                              default_flow_style=False)
 
 
 def gen(check_only):
