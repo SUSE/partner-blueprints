@@ -32,7 +32,7 @@ metadata:
 spec:
   displayName: "AlchemiStudio + vLLM (Qwen, open stack)"
   version: "0.1.0"
-  source: Custom
+  source: Partner
   description: |-
     AlchemiStudio AI platform pre-wired to an in-cluster OPEN model — a full turnkey stack:
     vLLM serving Qwen2.5-3B-Instruct (Apache-2.0) as the Copilot chat model, plus a
