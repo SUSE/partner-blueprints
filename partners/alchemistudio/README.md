@@ -5,19 +5,118 @@ computer-use sandbox, and RAG) for SUSE AI Factory.
 
 | Blueprint | What it deploys |
 |---|---|
-| [`alchemistudio-with-vllm`](blueprints/alchemistudio-with-vllm-0.1.0.yaml) | AlchemiStudio + in-cluster **vLLM** (Qwen2.5-3B-Instruct, Apache-2.0/open stack) as the Copilot model, plus a bundled CPU embedding server for RAG — fully self-hosted (no NGC / HuggingFace / cloud keys). |
+| [`alchemistudio-with-vllm`](blueprints/alchemistudio-with-vllm-0.1.0.yaml) | AlchemiStudio + in-cluster **vLLM** (Qwen2.5-3B-Instruct, open stack) as the Copilot model, plus a bundled CPU embedding server for RAG — fully self-hosted (no NGC / HuggingFace / cloud keys). |
+
+## Prerequisites
+
+- **SUSE AI Factory** (aif-operator) on a Rancher-managed RKE2 cluster.
+- **The `rancher-partner-charts` ClusterRepo** — the `alchemistudio-platform` chart is pulled
+  from the Rancher partner charts repo. Rancher creates it by default; if it is missing:
+
+  ```bash
+  kubectl apply -f - <<'EOF'
+  apiVersion: catalog.cattle.io/v1
+  kind: ClusterRepo
+  metadata:
+    name: rancher-partner-charts
+  spec:
+    gitBranch: main
+    gitRepo: https://git.rancher.io/partner-charts
+  EOF
+  ```
+
+- **One free GPU** with ≥16 GB memory (e.g. NVIDIA T4) on a node with runtimeclass `nvidia`.
+  vLLM claims a whole GPU (see step 1 below to check).
+- **A kata-enabled node** — the AlchemiStudio code sandbox / AIOS computer runs kata-isolated.
+- **StorageClass `local-path`** for the vLLM model cache (GPU nodes are usually not Longhorn
+  nodes); **Longhorn** (or another RWX-capable default class) for the platform data.
+- **cert-manager** for `tls.mode=acme` (Let's Encrypt), or your own cert with `tls.mode=byo`.
+- **Egress** to `dp.apps.rancher.io`, `ghcr.io`, `huggingface.co` and `alchemiacr.azurecr.io`
+  (mirror these for an air-gapped install).
+
+## Install — step by step
+
+1. **Check for a free GPU.**
+
+   ```bash
+   for node in $(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do
+     allocatable=$(kubectl get node "$node" -o jsonpath='{.status.allocatable.nvidia\.com/gpu}')
+     if [ -n "$allocatable" ] && [ "$allocatable" -gt 0 ]; then
+       allocated=$(kubectl get pods -A --field-selector spec.nodeName="$node",status.phase!=Failed,status.phase!=Succeeded \
+         -o jsonpath='{range .items[*].spec.containers[*]}{.resources.requests.nvidia\.com/gpu}{"\n"}{end}' \
+         | grep -v '^$' | awk '{s+=$1} END {print s+0}')
+       echo "Node: $node | Total: $allocatable | Allocated: $allocated | Free: $((allocatable - allocated))"
+     fi
+   done
+   ```
+
+   You need `Free >= 1` on at least one node.
+
+2. **Make sure the `rancher-partner-charts` ClusterRepo exists** (see Prerequisites).
+
+3. **Choose how the app is reached** — edit the blueprint before installing (blueprint values
+   are baked; the install wizard does not take per-value input). Set **one** of:
+   - `global.domain: ai.example.com` — real domain (production). You'll add DNS records in step 6.
+   - `gateway.loadBalancerIP: <reserved static IP>` — no domain; the app is served at
+     `<ip>.nip.io` with no DNS setup.
+
+   If both are blank the install stops with a clear message.
+
+4. **Install** from the AI Factory UI: *Blueprints → AlchemiStudio + vLLM → Install →
+   Fleet Bundle → target cluster → Install.*
+
+5. **Wait for the APISIX gateway** (namespace `apisix`) to get an external IP — this IP fronts
+   every AlchemiStudio hostname:
+
+   ```bash
+   kubectl -n apisix get svc apisix-gateway -w   # wait until EXTERNAL-IP is set, then Ctrl+C
+   ```
+
+6. **Real domain only:** create DNS A-records for `alchemi-app`, `alchemi-auth`, `alchemi-ops`
+   and `alchemi-zenith` `.<your-domain>` pointing at that IP. The TLS certificate is issued
+   automatically once DNS resolves.
+
+7. **Get the URLs and the first login:**
+
+   ```bash
+   kubectl -n alchemi get configmap alchemi-endpoints -o jsonpath='{.data.APP_URL}{"\n"}'
+   kubectl -n alchemi get configmap alchemi-endpoints -o jsonpath='{.data.ADMIN_EMAIL}{"\n"}'
+   kubectl -n alchemi get secret alchemi-secrets -o jsonpath='{.data.FIRST_USER_PASSWORD}' | base64 -d; echo
+   ```
+
+   Keycloak asks for a new password on first login. vLLM needs a few minutes on first install
+   to download the model weights.
+
+## What this blueprint deploys
+
+The `alchemistudio-platform` chart creates its own namespaces (and removes them on uninstall).
+The blueprint's target namespace is `alchemi`.
+
+| Namespace | Created by | What runs there |
+|---|---|---|
+| `alchemi` | blueprint target | App tier: web, ai, worker, workflow, zenith, compute-api, embeddings (TEI), AIOS workers |
+| `alchemi-data` | platform chart | PostgreSQL (pgvector), Redis, SeaweedFS object store |
+| `auth` | platform chart | Keycloak (login / OIDC) |
+| `observability` | platform chart | OpenObserve (logs, metrics, traces) |
+| `albox` | platform chart | Code sandboxes and the AIOS computer (kata-isolated) |
+| `apisix` | platform chart | APISIX gateway + etcd — `apisix-gateway` is the external LoadBalancer |
+| `openbao` | platform chart | OpenBao (secrets store) |
+| `external-secrets` | platform chart | External Secrets Operator |
+| `vllm-serve` | vllm component | vLLM engine + router (GPU) |
+
+**Why vLLM has its own namespace:** it's intentional. The GPU model server is the expensive,
+independently-sized part of the stack, so keeping it separate lets you apply GPU quotas and
+policies to it, and upgrade or swap the model (e.g. to a larger model) without touching the
+platform namespaces.
 
 ## Notes for reviewers
 
 - **Gateway:** the chart deploys **Apache APISIX** into the `apisix` namespace by default
   (`gateway.mode: bundled`) as the ingress / TLS / OIDC-routing layer; `gateway.mode: external`
-  routes through an existing gateway instead. See the blueprint's `spec.description`.
-- **Chart hosting (open question):** the `alchemistudio-platform` component references
-  `chartRepo: alchemi-helm-charts` — a Helm repo we currently host. We'd welcome guidance on
-  the preferred way to surface a partner chart to AI Factory (Application Collection, a partner
-  registry, or a ClusterRepo the operator registers). The `vllm` component already uses
-  `application-collection`.
-- **Images / credentials (open question):** AlchemiStudio is a commercial product and its
-  images are pulled from our registry with a **scoped, read-only (pull-only)** token. We're
-  happy to adopt SUSE's preferred distribution model (mirroring into Application Collection or a
-  partner registry) instead of embedding a pull token.
+  routes through an existing gateway instead.
+- **Chart source:** the `alchemistudio-platform` component uses the `rancher-partner-charts`
+  ClusterRepo — the same certified chart published via rancher/partner-charts. The `vllm`
+  component uses `application-collection`.
+- **Images / credentials:** AlchemiStudio is a commercial product; its images are pulled from
+  our registry with a **scoped, read-only (pull-only)** trial token, the same model as our
+  published Rancher partner chart.
