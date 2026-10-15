@@ -6,6 +6,8 @@ on:
       - "partners/**"
       - "example/**"
       - "scripts/**"
+      - ".yamllint"
+      - ".github/workflows/validate.yml"
   workflow_dispatch: {}
 
 permissions:
@@ -47,7 +49,11 @@ jobs:
           echo "${KUBECONFORM_SHA256}  kubeconform.tar.gz" | sha256sum -c -
           tar xzf kubeconform.tar.gz -C /usr/local/bin kubeconform
 
+      # Rules live in .yamllint. Runs non-blocking so the schema and convention
+      # checks still report in the same run; the Gate step fails the job.
       - name: yamllint
+        id: yamllint
+        continue-on-error: true
         run: yamllint partners example
 
       - name: Fetch CRDs and build schemas
@@ -100,27 +106,34 @@ jobs:
               } catch (e) { core.warning(`label ${name}: ${e.message}`); }
             }
 
-            // Upsert a validation summary comment.
+            // Upsert a validation summary comment. Fork PRs get a read-only
+            // token, so the comment can fail; the job summary always works.
             let summary = '_validation summary unavailable_';
             try { summary = fs.readFileSync('summary.md', 'utf8'); } catch (e) {}
+            await core.summary.addRaw(`## Blueprint validation\n\n${summary}`).write();
             const marker = '<!-- blueprint-validation -->';
             const body = `${marker}\n## Blueprint validation\n\n${summary}`;
-            const comments = await github.paginate(github.rest.issues.listComments,
-              {owner, repo, issue_number: pull_number});
-            const existing = comments.find(c => c.body.includes(marker));
-            if (existing) {
-              await github.rest.issues.updateComment(
-                {owner, repo, comment_id: existing.id, body});
-            } else {
-              await github.rest.issues.createComment(
-                {owner, repo, issue_number: pull_number, body});
+            try {
+              const comments = await github.paginate(github.rest.issues.listComments,
+                {owner, repo, issue_number: pull_number});
+              const existing = comments.find(c => c.body.includes(marker));
+              if (existing) {
+                await github.rest.issues.updateComment(
+                  {owner, repo, comment_id: existing.id, body});
+              } else {
+                await github.rest.issues.createComment(
+                  {owner, repo, issue_number: pull_number, body});
+              }
+            } catch (e) {
+              core.warning(`comment: ${e.message} (expected on fork PRs; see job summary)`);
             }
 
       - name: Gate
         if: >
+          steps.yamllint.outcome == 'failure' ||
           steps.kubeconform.outcome == 'failure' ||
           steps.conventions.outcome == 'failure' ||
           steps.drift.outcome == 'failure'
         run: |
-          echo "One or more validation steps failed. See logs and the PR comment."
+          echo "One or more validation steps failed. See logs and the job summary."
           exit 1
