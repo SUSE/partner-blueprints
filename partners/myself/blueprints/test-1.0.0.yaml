@@ -12,9 +12,9 @@
 apiVersion: ai-factory.suse.com/v1alpha1
 kind: Blueprint
 metadata:
-  name: example-chatbot-1-0-0
+  name: test-1-0-0
   labels:
-    ai-factory.suse.com/blueprint-name: example-chatbot
+    ai-factory.suse.com/blueprint-name: test
     ai-factory.suse.com/blueprint-version: 1.0.0
     # Optional: adds this blueprint to a category in the aggregate catalog.
     ai-factory.suse.com/category: rag
@@ -22,7 +22,7 @@ spec:
   source: Partner
   # Optional partner logo, shown beside the source badge on the blueprint card.
   # icon: data:image/png;base64,iVBORw0KGgo...
-  displayName: Example Chatbot
+  displayName: Test
   version: 1.0.0
   description: |
     A minimal single-component example blueprint used as a template for partner
