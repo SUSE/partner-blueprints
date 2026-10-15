@@ -27,7 +27,11 @@ computer-use sandbox, and RAG) for SUSE AI Factory.
 
 - **One free GPU** with ≥16 GB memory (e.g. NVIDIA T4) on a node with runtimeclass `nvidia`.
   vLLM claims a whole GPU (see step 1 below to check).
-- **A kata-enabled node** — the AlchemiStudio code sandbox / AIOS computer runs kata-isolated.
+- **Kata is optional.** The blueprint sets `kata.enabled: false`, so the code sandbox and AIOS
+  computer run as standard containers on any Linux node — a stock RKE2 cluster works. For
+  production / multi-user installs, prepare a Kata node (KVM-capable, Kata runtime installed,
+  labelled `kata=true` and tainted `pool=kata:NoSchedule`) and set `kata.enabled: true` to run
+  user code in Kata micro-VMs.
 - **StorageClass `local-path`** for the vLLM model cache (GPU nodes are usually not Longhorn
   nodes); **Longhorn** (or another RWX-capable default class) for the platform data.
 - **cert-manager** for `tls.mode=acme` (Let's Encrypt), or your own cert with `tls.mode=byo`.
@@ -58,7 +62,8 @@ computer-use sandbox, and RAG) for SUSE AI Factory.
    are baked; the install wizard does not take per-value input). Set **one** of:
    - `global.domain: ai.example.com` — real domain (production). You'll add DNS records in step 6.
    - `gateway.loadBalancerIP: <reserved static IP>` — no domain; the app is served at
-     `<ip>.nip.io` with no DNS setup.
+     `<ip>.nip.io` with no DNS setup. Prefer [sslip.io](https://sslip.io)? Also set
+     `global.wildcardDns: sslip.io`.
 
    If both are blank the install stops with a clear message.
 
@@ -98,7 +103,7 @@ The blueprint's target namespace is `alchemi`.
 | `alchemi-data` | platform chart | PostgreSQL (pgvector), Redis, SeaweedFS object store |
 | `auth` | platform chart | Keycloak (login / OIDC) |
 | `observability` | platform chart | OpenObserve (logs, metrics, traces) |
-| `albox` | platform chart | Code sandboxes and the AIOS computer (kata-isolated) |
+| `albox` | platform chart | Code sandboxes and the AIOS computer (in Kata micro-VMs when `kata.enabled: true`) |
 | `apisix` | platform chart | APISIX gateway + etcd — `apisix-gateway` is the external LoadBalancer |
 | `openbao` | platform chart | OpenBao (secrets store) |
 | `external-secrets` | platform chart | External Secrets Operator |
@@ -113,7 +118,11 @@ platform namespaces.
 
 - **Gateway:** the chart deploys **Apache APISIX** into the `apisix` namespace by default
   (`gateway.mode: bundled`) as the ingress / TLS / OIDC-routing layer; `gateway.mode: external`
-  routes through an existing gateway instead.
+  routes through an existing gateway instead. It is used rather than a plain `Ingress` because
+  it also carries a wildcard route for apps users build inside AlchemiStudio, CORS, rate
+  limiting, HTTPS redirects and long timeouts for AI requests — things that would otherwise
+  need controller-specific annotations (ingress-nginx vs Traefik). It stays in its own
+  namespace and doesn't touch the cluster's ingress controller.
 - **Chart source:** the `alchemistudio-platform` component uses the `rancher-partner-charts`
   ClusterRepo — the same certified chart published via rancher/partner-charts. The `vllm`
   component uses `application-collection`.
