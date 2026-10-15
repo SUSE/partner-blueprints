@@ -116,13 +116,18 @@ platform namespaces.
 
 ## Notes for reviewers
 
-- **Gateway:** the chart deploys **Apache APISIX** into the `apisix` namespace by default
-  (`gateway.mode: bundled`) as the ingress / TLS / OIDC-routing layer; `gateway.mode: external`
-  routes through an existing gateway instead. It is used rather than a plain `Ingress` because
-  it also carries a wildcard route for apps users build inside AlchemiStudio, CORS, rate
-  limiting, HTTPS redirects and long timeouts for AI requests — things that would otherwise
-  need controller-specific annotations (ingress-nginx vs Traefik). It stays in its own
-  namespace and doesn't touch the cluster's ingress controller.
+- **Gateway:** the chart deploys **Apache APISIX** into the `apisix` namespace as
+  AlchemiStudio's own application router: it maps each AlchemiStudio hostname to its service,
+  carries a wildcard route for apps users build inside AlchemiStudio, and handles CORS, rate
+  limiting, HTTPS redirects and long timeouts for AI requests. Doing this with plain `Ingress`
+  objects would need controller-specific annotations (ingress-nginx vs Traefik). APISIX stays
+  in its own namespace and doesn't touch the cluster's ingress controller.
+  - **Reaching it from outside:** by default `apisix-gateway` is a LoadBalancer Service. To
+    use the cluster's own ingress / gateway as the entry point instead, set
+    `gateway.serviceType: ClusterIP` and route the AlchemiStudio hostnames (including the
+    wildcard) to the `apisix-gateway` Service on ports 80/443.
+  - **Roadmap:** we plan to make APISIX optional in a future release, so the platform can run
+    directly behind the cluster's ingress controller or an existing gateway.
 - **Chart source:** the `alchemistudio-platform` component uses the `rancher-partner-charts`
   ClusterRepo — the same certified chart published via rancher/partner-charts. The `vllm`
   component uses `application-collection`.
