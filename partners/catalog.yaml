@@ -8,4 +8,4 @@ spec:
   displayName: Partner Blueprints
   description: Community and partner-contributed blueprints for SUSE AI Factory.
   blueprints:
-  - name: klique-platform
+    - name: klique-platform
