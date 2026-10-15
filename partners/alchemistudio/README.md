@@ -125,7 +125,9 @@ platform namespaces.
   - **Reaching it from outside:** by default `apisix-gateway` is a LoadBalancer Service. To
     use the cluster's own ingress / gateway as the entry point instead, set
     `gateway.serviceType: ClusterIP` and route the AlchemiStudio hostnames (including the
-    wildcard) to the `apisix-gateway` Service on ports 80/443.
+    wildcard) to the `apisix-gateway` Service on ports 80/443. APISIX still terminates TLS, so
+    it needs the certificate (`tls.mode: acme` or `byo`), and the front gateway must pass HTTPS
+    through to it unchanged (TLS passthrough) and forward port 80 for the ACME challenge.
   - **Roadmap:** we plan to make APISIX optional in a future release, so the platform can run
     directly behind the cluster's ingress controller or an existing gateway.
 - **Chart source:** the `alchemistudio-platform` component uses the `rancher-partner-charts`
