@@ -20,7 +20,6 @@ metadata:
     ai-factory.suse.com/category: rag
 spec:
   source: SUSE
-  source: SUSE
   # Optional partner logo, shown beside the source badge on the blueprint card.
   # icon: data:image/png;base64,iVBORw0KGgo...
   displayName: Test
