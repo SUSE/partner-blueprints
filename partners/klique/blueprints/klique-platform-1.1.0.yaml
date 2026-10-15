@@ -171,12 +171,34 @@ spec:
                 flags:
                   migStrategy: mixed
       Add one resources entry per GPU index (nvidia.com/gpu-1 for device
-      "1", and so on); replicas must be 8. With an operator-managed toolkit
-      also set toolkit.env:
-        ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED=false
-        ACCEPT_NVIDIA_VISIBLE_DEVICES_AS_VOLUME_MOUNTS=true
-      With a host-installed toolkit set the same two options in
-      /etc/nvidia-container-runtime/config.toml on every GPU node.
+      "1", and so on); replicas must be 8.
+
+      With the operator-managed toolkit and the containerized driver, also:
+        cdi:
+          enabled: false
+          default: false
+        toolkit:
+          enabled: true
+          env:
+            - name: CONTAINERD_SOCKET
+              value: /run/k3s/containerd/containerd.sock
+            - name: ACCEPT_NVIDIA_VISIBLE_DEVICES_ENVVAR_WHEN_UNPRIVILEGED
+              value: "false"
+            - name: ACCEPT_NVIDIA_VISIBLE_DEVICES_AS_VOLUME_MOUNTS
+              value: "true"
+      CDI must be off: the Klique device plugin passes devices as volume
+      mounts, and with CDI on GPU pods fail with "unresolvable CDI devices".
+      With a host-installed toolkit, set the two ACCEPT options in
+      /etc/nvidia-container-runtime/config.toml on every GPU node instead.
+
+      Task pods must run with the nvidia runtime. Either make it the node's
+      default runtime (RKE2: default-runtime: nvidia, with a host-installed
+      toolkit), or, after the GPU Operator is in place, set it for Klique
+      task pods in the orchestrator component:
+        orchestratork8sglue:
+          basePodTemplate:
+            runtimeClassName: nvidia
+      Without one of these, fractional GPU pods start without the driver.
 
       For dynamic-mig-operator: the operator's own MIG manager off.
         migManager:
