@@ -19,14 +19,17 @@ metadata:
     # Optional: adds this blueprint to a category in the aggregate catalog.
     ai-factory.suse.com/category: rag
 spec:
-  source: SUSE
+  source: Partner
   # Optional partner logo, shown beside the source badge on the blueprint card.
   # icon: data:image/png;base64,iVBORw0KGgo...
   displayName: Test
-  version:    1.0.0
+  version: 1.0.0
   description: |
-    A minimal single-component example blueprint used as a template for partner submissions that happens to describe prerequisites, exposed endpoints, licensing notes, and more
-detail than really fits on one line here.
+    A minimal single-component example blueprint used as a template for partner
+    submissions. Replace the component(s) below with your own Helm charts and
+    values. Keep the description accurate: prerequisites (StorageClass,
+    cert-manager, GPUs), exposed endpoints, and any licensing notes belong here.
+    Touched for fork-PR CI test 1.
   components:
     - chartName: open-webui
       chartRepo: application-collection
