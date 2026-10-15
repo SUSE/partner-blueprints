@@ -1,11 +1,13 @@
 name: Validate blueprints
 
-on:
+on:  # yamllint disable-line rule:truthy
   pull_request:
     paths:
       - "partners/**"
       - "example/**"
       - "scripts/**"
+      - ".yamllint"
+      - ".github/workflows/validate.yml"
   workflow_dispatch: {}
 
 permissions:
@@ -32,9 +34,13 @@ jobs:
     steps:
       # Actions pinned to immutable commit SHAs (tags are mutable). Comment = the
       # human-readable version each SHA corresponds to.
-      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+        with:
+          # Nothing after checkout needs git auth; don't leave the token on disk
+          # where PR-controlled scripts can read it.
+          persist-credentials: false
 
-      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b  # v5.3.0
         with:
           python-version: "3.12"
 
@@ -43,11 +49,17 @@ jobs:
 
       - name: Install kubeconform (checksum-verified)
         run: |
-          curl -sSLf "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" -o kubeconform.tar.gz
+          base="https://github.com/yannh/kubeconform/releases/download"
+          curl -sSLf "$base/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            -o kubeconform.tar.gz
           echo "${KUBECONFORM_SHA256}  kubeconform.tar.gz" | sha256sum -c -
           tar xzf kubeconform.tar.gz -C /usr/local/bin kubeconform
 
+      # Rules live in .yamllint. Runs non-blocking so the schema and convention
+      # checks still report in the same run; the Gate step fails the job.
       - name: yamllint
+        id: yamllint
+        continue-on-error: true
         run: yamllint partners example
 
       - name: Fetch CRDs and build schemas
@@ -78,7 +90,7 @@ jobs:
 
       - name: Label and comment
         if: always() && github.event_name == 'pull_request'
-        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea  # v7.0.1
         with:
           script: |
             const fs = require('fs');
@@ -100,27 +112,34 @@ jobs:
               } catch (e) { core.warning(`label ${name}: ${e.message}`); }
             }
 
-            // Upsert a validation summary comment.
+            // Upsert a validation summary comment. Fork PRs get a read-only
+            // token, so the comment can fail; the job summary always works.
             let summary = '_validation summary unavailable_';
             try { summary = fs.readFileSync('summary.md', 'utf8'); } catch (e) {}
+            await core.summary.addRaw(`## Blueprint validation\n\n${summary}`).write();
             const marker = '<!-- blueprint-validation -->';
             const body = `${marker}\n## Blueprint validation\n\n${summary}`;
-            const comments = await github.paginate(github.rest.issues.listComments,
-              {owner, repo, issue_number: pull_number});
-            const existing = comments.find(c => c.body.includes(marker));
-            if (existing) {
-              await github.rest.issues.updateComment(
-                {owner, repo, comment_id: existing.id, body});
-            } else {
-              await github.rest.issues.createComment(
-                {owner, repo, issue_number: pull_number, body});
+            try {
+              const comments = await github.paginate(github.rest.issues.listComments,
+                {owner, repo, issue_number: pull_number});
+              const existing = comments.find(c => c.body.includes(marker));
+              if (existing) {
+                await github.rest.issues.updateComment(
+                  {owner, repo, comment_id: existing.id, body});
+              } else {
+                await github.rest.issues.createComment(
+                  {owner, repo, issue_number: pull_number, body});
+              }
+            } catch (e) {
+              core.warning(`comment: ${e.message} (expected on fork PRs; see job summary)`);
             }
 
       - name: Gate
         if: >
+          steps.yamllint.outcome == 'failure' ||
           steps.kubeconform.outcome == 'failure' ||
           steps.conventions.outcome == 'failure' ||
           steps.drift.outcome == 'failure'
         run: |
-          echo "One or more validation steps failed. See logs and the PR comment."
+          echo "One or more validation steps failed. See logs and the job summary."
           exit 1
