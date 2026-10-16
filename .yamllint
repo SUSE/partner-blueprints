@@ -5,6 +5,8 @@ rules:
   line-length:
     max: 120
     level: warning
+  new-line-at-end-of-file:
+    level: warning
   # Allow both {a: b} and { a: b } flow style.
   braces:
     max-spaces-inside: 1
