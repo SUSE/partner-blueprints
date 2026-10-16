@@ -7,8 +7,5 @@ metadata:
 spec:
   displayName: Partner Blueprints
   description: Community and partner-contributed blueprints for SUSE AI Factory.
-  categories:
-    - rag
   blueprints:
-    - name: test
-      category: rag
+    - name: klique-platform
