@@ -7,5 +7,8 @@ metadata:
 spec:
   displayName: Partner Blueprints
   description: Community and partner-contributed blueprints for SUSE AI Factory.
+  categories:
+    - platform
   blueprints:
-    - name: tensormesh-suse-ai
+    - name: alchemistudio-with-vllm
+      category: platform
