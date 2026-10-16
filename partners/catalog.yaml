@@ -7,4 +7,5 @@ metadata:
 spec:
   displayName: Partner Blueprints
   description: Community and partner-contributed blueprints for SUSE AI Factory.
-  blueprints: []
+  blueprints:
+    - name: tensormesh-suse-ai
