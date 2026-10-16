@@ -7,4 +7,8 @@ metadata:
 spec:
   displayName: Partner Blueprints
   description: Community and partner-contributed blueprints for SUSE AI Factory.
-  blueprints: []
+  categories:
+    - platform
+  blueprints:
+    - name: alchemistudio-with-vllm
+      category: platform

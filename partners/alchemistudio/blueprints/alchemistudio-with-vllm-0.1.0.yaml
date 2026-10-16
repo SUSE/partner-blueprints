@@ -1,0 +1,313 @@
+# =============================================================================
+# Combined Blueprint — AlchemiStudio + vLLM(Qwen) + self-hosted embeddings, ALL WIRED
+# =============================================================================
+# ONE blueprint that installs AlchemiStudio (default) AND vLLM serving Qwen2.5-3B, and
+# AUTO-CONFIGURES AlchemiStudio to use them — no console clicks. The "open stack" turnkey.
+#
+# HOW THE LINKING WORKS (a chain of matching identifiers):
+#   vLLM modelSpec.modelURL = "Qwen/Qwen2.5-3B-Instruct"   (vLLM serves this)
+#        -> router at http://vllm-router-service.vllm-serve.svc:80/v1
+#   AlchemiStudio seed (selfHostedModel):
+#     config_providers.endpoint_url  = that router URL,  litellm_provider=custom_openai
+#     config_models.deployment_name  = "Qwen/Qwen2.5-3B-Instruct"  == modelURL (MUST match)
+#     config_default_models[10 text roles] -> that model   (Copilot uses it)
+#   Embeddings: a bundled CPU TEI server (bge-small) -> config_providers[suse_embed]
+#     -> config_default_models[fn:knowledge_embedding]  (RAG works, no GPU/cloud key)
+#   Non-text roles (audio/vision/image-gen/research) are left UNSET (feature off).
+#
+# COMPONENTS:
+#   1. alchemistudio-platform (umbrella)  -> the app + bundled TEI embeddings + the model seed
+#   2. vllm                          -> Qwen2.5-3B on the GPU (tool-calling + enforce-eager),
+#                                       in its own namespace (vllm-serve) by design
+#
+# See partners/alchemistudio/README.md for the step-by-step install and the
+# namespace/resource table.
+# -----------------------------------------------------------------------------
+apiVersion: ai-factory.suse.com/v1alpha1
+kind: Blueprint
+metadata:
+  name: alchemistudio-with-vllm-0-1-0
+  labels:
+    ai-factory.suse.com/blueprint-name: alchemistudio-with-vllm
+    ai-factory.suse.com/blueprint-version: 0.1.0
+    ai-factory.suse.com/category: platform
+spec:
+  displayName: "AlchemiStudio + vLLM (Qwen, open stack)"
+  version: "0.1.0"
+  source: Partner
+  description: |-
+    AlchemiStudio AI platform pre-wired to an in-cluster OPEN model — a full turnkey stack:
+    vLLM serving Qwen2.5-3B-Instruct (Apache-2.0) as the Copilot chat model, plus a
+    bundled CPU embedding server (bge-small via HuggingFace TEI) so RAG works.
+    Everything is self-hosted: NO NVIDIA NGC key, NO HuggingFace token, NO cloud API
+    key, and no LiteLLM (AlchemiStudio is its OWN gateway). AlchemiStudio auto-configures itself to
+    use the model — no console clicks.
+
+    ONE REQUIRED INPUT — A HOSTNAME SOURCE. Everything else is defaulted (admin, data
+    tier, model wiring, image-pull creds). You MUST provide EITHER global.domain OR a
+    pinned gateway.loadBalancerIP — the install FAILS FAST with a clear message if BOTH
+    are blank (there is no usable hostname otherwise). If only the IP is given, the app is
+    served automatically at "<ip>.nip.io" (or "<ip>.sslip.io" — set global.wildcardDns).
+
+    DOMAIN vs STATIC IP — how the app hostnames are formed (pick ONE):
+      * REAL DOMAIN (production): set global.domain (e.g. alchemi.acme.com). Each app is
+        served at <subdomain>.<domain>: alchemi-app.<domain> (web), alchemi-auth.<domain>
+        (login), alchemi-ops.<domain> (observability), alchemi-zenith.<domain>. After
+        install, read the gateway IP (kubectl -n apisix get svc apisix-gateway) and point a
+        DNS A-record for each <subdomain>.<domain> at it; the TLS cert issues automatically
+        once DNS resolves.
+      * STATIC IP, NO DOMAIN (test / DNS-less): leave global.domain blank and set
+        gateway.loadBalancerIP to a reserved static IP. The chart pins the gateway to that
+        IP and serves the app at "<ip>.nip.io" — no DNS setup, and the trusted cert issues
+        in one phase (nip.io resolves the host to your IP). Prefer sslip.io? Set
+        global.wildcardDns: sslip.io (same behaviour). gateway.loadBalancerIP is ONE
+        portable knob: it works on bare-metal (MetalLB) AND Azure (the IP must be a
+        pre-reserved Public IP in the cluster's own resource group).
+      Set your choice by EDITING this Blueprint BEFORE you register it. The FleetBundle path
+      renders the Blueprint's baked values — AIWorkload componentValues are NOT applied to
+      blueprint components, so editing the Blueprint YAML is the only way to configure it.
+
+    TLS:
+      * tls.mode=acme (default): free Let's Encrypt cert via HTTP-01 — the hostnames must
+        resolve to the gateway IP and port 80 be reachable from the internet BEFORE install.
+      * tls.mode=byo: paste your own cert + key (tls.certPem / tls.keyPem).
+
+    ADMIN: defaults to suse-admin@alchemistudio.ai with a TEMPORARY demo password (Keycloak
+    forces a reset on first login). Override admin.email / admin.initialPassword for real use.
+    The first user is granted the COPILOT seat automatically (admin.copilotForFirstUser=true).
+
+    GUARDRAILS — OFF by default (guardrails.enabled=false) to keep the first install lean and
+    fast; the ClamAV file-scan sidecar is likewise off. Neither is needed for the open-model
+    demo. Enable them for a hardened/production deployment: set guardrails.enabled=true (and
+    clamav.enabled=true) in the alchemistudio-platform component values.
+
+    HUGGINGFACE TOKEN — NOT required. Qwen2.5-3B-Instruct is a public/ungated model. Only
+    a GATED model (e.g. meta-llama/*) needs one; if you change the vllm component's modelURL
+    to a gated model, create an HF token Secret and reference it in that component's env.
+
+    IMAGE PULL — the AlchemiStudio app images come from alchemiacr.azurecr.io using a baked
+    scoped, PULL-ONLY ACR token (global.imageCredentials). The chart creates the
+    alchemi-registry docker secret in every namespace automatically — no manual pull
+    secret. (SUSE / NVIDIA images use the operator's suse-ai-pull-combined secret as
+    usual.) For a real customer deployment, mirror the images into your own registry and
+    set your own creds instead.
+
+    HOW THE MODEL IS WIRED: the chart seeds an ACCOUNT-scope provider + model into AlchemiStudio
+    (config_providers / config_models, scoped to the login account, with pricing + ratings +
+    a dummy api_key so the Copilot model picker shows and accepts it) pointing at the vLLM
+    router, and maps the 10 text Copilot roles (config_default_models) to it;
+    fn:knowledge_embedding maps to the bundled TEI. Non-text roles (audio / vision / image-gen
+    / research / web) are left UNSET.
+
+    PREREQUISITES:
+      * The Rancher partner charts ClusterRepo "rancher-partner-charts" (the
+        alchemistudio-platform chart is pulled from it). Rancher creates it by default;
+        if it is missing, create it:
+          apiVersion: catalog.cattle.io/v1
+          kind: ClusterRepo
+          metadata: { name: rancher-partner-charts }
+          spec: { gitRepo: "https://git.rancher.io/partner-charts", gitBranch: main }
+      * A GPU node with runtimeclass "nvidia" and ONE FREE GPU with >=16GB memory (e.g.
+        T4). vLLM claims a whole GPU. Check free GPUs with the script in SETUP step 1.
+      * Kata is NOT required. This blueprint sets kata.enabled=false, so code sandboxes run
+        as standard containers on any Linux node (RKE2 doesn't ship Kata). For production /
+        multi-user installs, prepare a Kata node and set kata.enabled=true for VM-level
+        isolation of user code (see the README).
+      * StorageClass "local-path" for the vLLM model cache (the GPU node is typically NOT a
+        Longhorn node, so a node-local class is required).
+      * cert-manager on the cluster for tls.mode=acme (or your own cert for byo).
+      * Egress to pull the vLLM + TEI images (dp.apps.rancher.io, ghcr.io) and the Qwen +
+        bge-small weights (huggingface.co). Mirror all of these for an air-gapped install.
+
+    NAMESPACES — the alchemistudio-platform chart creates (and removes on uninstall) its own
+    namespaces; the blueprint's target namespace is "alchemi":
+      alchemi           app tier: web, ai, worker, workflow, zenith, compute-api, embeddings (TEI), AIOS workers
+      alchemi-data      pgvector (Postgres), Redis, SeaweedFS object store
+      auth              Keycloak (login / OIDC)
+      observability     OpenObserve (logs/metrics/traces)
+      albox             code sandboxes + AIOS computer (Kata micro-VMs when kata.enabled=true)
+      apisix            APISIX gateway + etcd (the "apisix-gateway" LoadBalancer = the external IP)
+      openbao           OpenBao (secrets store)
+      external-secrets  External Secrets Operator
+      vllm-serve        vLLM engine + router (GPU) — separate ON PURPOSE: keeps the GPU model
+                        server independently managed, quota-able and replaceable (e.g. swap the
+                        model) without touching the platform namespaces.
+
+    SETUP (kubectl) — no secrets to pre-create (unlike gated-model blueprints); just:
+
+      # 1) BEFORE deploying — confirm a free GPU for vLLM (it needs one whole GPU):
+      for node in $(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do
+        allocatable=$(kubectl get node "$node" -o jsonpath='{.status.allocatable.nvidia\.com/gpu}')
+        if [ -n "$allocatable" ] && [ "$allocatable" -gt 0 ]; then
+          allocated=$(kubectl get pods -A --field-selector spec.nodeName="$node",status.phase!=Failed,status.phase!=Succeeded \
+            -o jsonpath='{range .items[*].spec.containers[*]}{.resources.requests.nvidia\.com/gpu}{"\n"}{end}' \
+            | grep -v '^$' | awk '{s+=$1} END {print s+0}')
+          echo "Node: $node | Total: $allocatable | Allocated: $allocated | Free: $((allocatable - allocated))"
+        fi
+      done
+      #    You need Free >= 1 on at least one node. If every GPU is taken, scale down the
+      #    workload using it before installing.
+
+      # 2) AFTER install — wait for the APISIX gateway (namespace "apisix") to get an
+      #    external IP. This IP fronts every AlchemiStudio hostname:
+      kubectl -n apisix get svc apisix-gateway -w        # wait until EXTERNAL-IP is set, Ctrl+C
+      #    Real domain: point a DNS A-record for each <subdomain>.<domain> at that IP.
+      #    Static-IP / nip.io path: nothing to do — the host already resolves to the IP.
+      #    Then get the app URLs (computed from your domain + the branded subdomains, so you
+      #    don't have to assemble them by hand — for a nip.io test they resolve automatically):
+      kubectl -n alchemi get configmap alchemi-endpoints \
+        -o jsonpath='App:  {.data.APP_URL}{"\n"}Auth: https://{.data.AUTH_HOST}{"\n"}Ops:  https://{.data.OPS_HOST}{"\n"}' ; echo
+
+      # 3) LOGIN CREDENTIALS (admin) — retrieve via kubectl. Keycloak forces a password
+      #    reset on first login (the app password below is the INITIAL one).
+      #    Username / email:
+      kubectl -n alchemi get configmap alchemi-endpoints -o jsonpath='{.data.ADMIN_EMAIL}' ; echo
+      #    App login password:
+      kubectl -n alchemi get secret alchemi-secrets -o jsonpath='{.data.FIRST_USER_PASSWORD}' | base64 -d ; echo
+      #    Keycloak admin-console password (only if you need the KC admin UI):
+      kubectl -n alchemi get secret alchemi-secrets -o jsonpath='{.data.KC_ADMIN_PASSWORD}' | base64 -d ; echo
+
+      # 4) VERIFY the model wiring seeded (provider + model, account-scoped to the login
+      #    account; the Copilot picker needs pricing + a non-empty provider credential):
+      kubectl -n alchemi-data exec alchemi-pgvector-0 -- \
+        psql -U alchemiadmin -d alchemiapp_db \
+        -c "select m.scope, m.provider_id, m.deployment_name, m.input_cost_per_million, p.encrypted_credentials \
+            from config_models m join config_providers p on p.id=m.provider_id \
+            where m.provider_id in ('suse_open','suse_embed');"
+  components:
+    # =========================================================================
+    # COMPONENT 1 — AlchemiStudio platform (app + bundled embeddings + the model seed)
+    # =========================================================================
+    # chartName = the chart's real name ("alchemistudio-platform"); chartRepo = the
+    # Rancher partner charts ClusterRepo ("rancher-partner-charts"), which serves the
+    # same certified chart published via rancher/partner-charts (see PREREQUISITES).
+    - chartName: alchemistudio-platform
+      chartRepo: rancher-partner-charts
+      chartVersion: "1.0.25"                 # + optional Kata (kata.enabled) + global.wildcardDns (nip.io | sslip.io)
+      targetNamespace: alchemi
+      values:
+        global:
+          # Hostname source — set EITHER this domain OR gateway.loadBalancerIP (below).
+          # With a domain, point DNS A-records for each <subdomain>.<domain> at the APISIX
+          # gateway IP after install (kubectl -n apisix get svc apisix-gateway). Set it HERE
+          # before registering the Blueprint (AIWorkload componentValues are NOT applied to
+          # blueprint components).
+          domain: ""                         # REAL-DOMAIN path: e.g. alchemi.acme.com. Leave "" to use the STATIC-IP path (set gateway.loadBalancerIP below). Install fails ONLY if BOTH are blank.
+          wildcardDns: nip.io                # STATIC-IP path host suffix: nip.io or sslip.io
+          subdomains:                        # branded (avoids generic app./auth. collisions)
+            app: alchemi-app
+            auth: alchemi-auth
+            ops: alchemi-ops
+            zenith: alchemi-zenith
+          image: { registry: alchemiacr.azurecr.io, tag: "1.1.0" }
+          # Scoped ACR pull token (long-lived, PULL-ONLY). The chart creates the
+          # `alchemi-registry` docker secret from these in every namespace, so the
+          # AlchemiStudio app images pull from alchemiacr.azurecr.io with no manual step.
+          # NOTE: pull-only + revocable (az acr token). For a real customer deployment,
+          # mirror images into your own registry and set your own creds here instead.
+          imageCredentials:
+            username: "alchemi-trial-pull"
+            # REQUIRED — without it the app images can't be pulled. Distributed the SAME way as
+            # the partner charts. Scope map action: repositories/*/content/read (read-only).
+            password: "5XndgwcC81A2NPjGY08kDVRsHKj0POHiJ4dDJJSoCii9HTqBx4pUJQQJ99CIACGhslBEqg7NAAABAZCR6ty8"
+        admin:
+          email: "suse-admin@alchemistudio.ai"   # first user + KC admin (== the login email)
+          name: "SUSE Admin"
+          orgName: "AlchemiStudio"
+          # ⚠️ DEMO temporary password — it is COMMITTED here, so NOT secret. Keycloak
+          # forces a reset on first login (single-use). For anything real, leave BLANK
+          # (auto-generated; retrieve from the FIRST_USER_PASSWORD secret post-install).
+          initialPassword: "AlchemiSuse#2026"
+        license: { jwt: "" }                 # optional — trial/fixed-seats
+        # STATIC-IP path (optional) — use INSTEAD of global.domain above. Uncomment and set
+        # to a reserved static IP to serve the app at "<ip>.nip.io" (or sslip.io, see
+        # global.wildcardDns) with NO domain/DNS. ONE
+        # portable knob: works on bare-metal (MetalLB) AND Azure (the IP must be a pre-reserved
+        # Public IP in the cluster's own resource group). Leave commented for a real-domain
+        # install. If BOTH this and global.domain are blank, the install STOPS with a clear
+        # message (no usable hostname). See 0.1.0/README.md for the domain vs static-IP paths.
+        # gateway:
+        #   loadBalancerIP: "203.0.113.10"    # <- your reserved static IP
+        tls: { enabled: true, mode: acme }    # acme (Let's Encrypt) or byo (paste cert)
+        guardrails: { enabled: false }        # keep first install fast
+        # Kata OFF: code sandboxes run as standard containers on any Linux node, so a stock
+        # RKE2 cluster works. Set true (and prepare a Kata node) for VM-level isolation.
+        kata: { enabled: false }
+        # ---- The auto-configure: seed Qwen (vLLM) as Copilot + bundle TEI embeddings ----
+        selfHostedModel:
+          enabled: true
+          chat:
+            endpointUrl: "http://vllm-router-service.vllm-serve.svc.cluster.local:80/v1"
+            model: "Qwen/Qwen2.5-3B-Instruct"      # MUST equal the vLLM modelURL below
+            setAsCopilotDefault: true
+          embedding:
+            enabled: true                     # bundled CPU TEI (bge-small) -> RAG
+
+    # =========================================================================
+    # COMPONENT 2 — vLLM serving Qwen2.5-3B on the GPU (validated config)
+    # =========================================================================
+    - chartName: vllm
+      chartRepo: application-collection
+      chartVersion: "0.1.10"
+      targetNamespace: vllm-serve
+      values:
+        global:
+          imageRegistry: ""
+          imagePullSecrets: ["application-collection"]
+        servingEngineSpec:
+          enableEngine: true
+          runtimeClassName: nvidia
+          containerPort: 8000
+          servicePort: 80
+          tolerations:
+            - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+          modelSpec:
+            - name: qwen2-5-3b
+              registry: "dp.apps.rancher.io"
+              repository: "containers/vllm-openai"
+              tag: "0.19.0-5.29"
+              imagePullPolicy: "IfNotPresent"
+              modelURL: "Qwen/Qwen2.5-3B-Instruct"    # == config_models.deployment_name
+              replicaCount: 1
+              requestCPU: 2
+              requestMemory: "8Gi"
+              requestGPU: 1
+              pvcStorage: "20Gi"
+              pvcAccessMode: ["ReadWriteOnce"]
+              storageClass: "local-path"                # GPU node is not Longhorn
+              vllmConfig:
+                dtype: "half"                            # T4 = Turing, no bf16
+                # 64K context — REQUIRED for AIOS. The AIOS Hermes agent hard-rejects any
+                # model whose context window is < 64000 ("context window of N tokens ...
+                # below the minimum 64,000 required by Hermes Agent"). Qwen2.5-3B's
+                # native max is 32768, so we extend to 65536 with YaRN rope-scaling
+                # (--hf-overrides below) + VLLM_ALLOW_LONG_MAX_MODEL_LEN=1 (env, below —
+                # vLLM refuses max-model-len above native without it). YaRN makes the
+                # extension safe (without rope-scaling, positions > native → NaN).
+                # config_models.context_token_limit MUST match this (chart values:
+                # selfHostedModel.chat.contextTokenLimit) or Hermes still reads 8192.
+                # (8192 was fine for Copilot chat but failed the AIOS 64K gate.)
+                maxModelLen: 65536
+                # tool-calling (Copilot sends tools+tool_choice:auto) + fast restarts + YaRN 64K
+                extraArgs: ["--gpu-memory-utilization", "0.9", "--enable-auto-tool-choice", "--tool-call-parser", "hermes", "--enforce-eager", "--hf-overrides", "{\"rope_scaling\":{\"rope_type\":\"yarn\",\"factor\":2.0,\"original_max_position_embeddings\":32768}}"]
+              # Allow max-model-len (65536) above the model's native 32768 window.
+              env:
+                - name: VLLM_ALLOW_LONG_MAX_MODEL_LEN
+                  value: "1"
+        routerSpec:
+          enableRouter: true
+          replicaCount: 1
+          routingLogic: roundrobin
+          serviceDiscovery: k8s
+          k8sServiceDiscoveryType: pod-ip
+          serviceType: ClusterIP
+          servicePort: 80
+          containerPort: 8000
+          registry: dp.apps.rancher.io
+          repository: containers/lmcache-lmstack-router
+          tag: 0.1.10-3.60
+          imagePullPolicy: IfNotPresent
+          resources:
+            requests: { cpu: 400m, memory: 500Mi }
+            limits:   { memory: 1000Mi }
+          ingress: { enabled: false }
