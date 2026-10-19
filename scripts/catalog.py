@@ -52,7 +52,7 @@ CATALOG_HEADER = {
     "metadata": {"name": "partner-catalog"},
     "spec": {
         "displayName": "Partner Blueprints",
-        "description": "Community and partner-contributed blueprints for SUSE AI Factory.",
+        "description": "This repository contains partner-contributed blueprints for SUSE AI Factory. Support for each blueprint is provided by the contributing partner, not by SUSE. For assistance or to report issues, please contact the relevant partner directly.",
     },
 }
 
