@@ -10,4 +10,10 @@ spec:
     Factory. Support for each blueprint is provided by the contributing partner, not
     by SUSE. For assistance or to report issues, please contact the relevant partner
     directly.
-  blueprints: []
+  categories:
+    - security
+  blueprints:
+    - name: traefik-hub-ai-mcp-gateway
+      category: security
+    - name: traefik-hub-ai-mcp-governance-demo
+      category: security
