@@ -120,9 +120,14 @@ The blueprint's target namespace is `alchemi`.
 | `external-secrets` | platform chart | External Secrets Operator |
 | `vllm-serve` | vllm component | vLLM engine + router (GPU) |
 
-**One instance per cluster.** Because the platform chart uses these fixed namespaces (and
-installs cluster-wide pieces such as the External Secrets Operator), only one AlchemiStudio
-instance can run per cluster today.
+**Why separate namespaces:** each part of the stack gets its own namespace so the tiers stay
+separated — access and quotas can be managed per tier (data, login, gateway, secrets), and
+user-generated code in the sandbox namespace (`albox`) is kept apart from the platform. The
+chart creates these namespaces itself and removes them on uninstall, so nothing is left behind.
+
+**One instance per cluster.** Because the namespace names are fixed and a few objects are
+cluster-wide (such as the External Secrets Operator), only one AlchemiStudio instance can run
+per cluster today.
 
 **Why vLLM has its own namespace:** it's intentional. The GPU model server is the expensive,
 independently-sized part of the stack, so keeping it separate lets you apply GPU quotas and
