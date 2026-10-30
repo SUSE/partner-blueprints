@@ -1,0 +1,270 @@
+# SUSE AI Factory blueprint: Traefik Hub with its AI Gateway and MCP Gateway
+# enabled, next to the cluster's ingress controller, and the SUSE
+# OpenTelemetry Collector. Both components install into the AIWorkload's
+# target namespace (the wizard proposes traefik-hub-ai-mcp-gateway-system).
+#
+# No chart of our own: the traefik component is the official Traefik Helm
+# chart. It creates no route and no Ingress: the user adds IngressRoutes of
+# this Traefik's class in this namespace, and an Ingress of the cluster's
+# ingress controller in front of it (examples in partners/traefik/README.traefik-hub-ai-mcp-gateway.md).
+# The one extraObjects entry checks the license setting, then creates the
+# license Secret from global.blueprint.licenseToken. The chart renders it
+# with tpl; the settings sit under global because the chart's values schema
+# accepts no other new top-level key.
+#
+# The traefik component comes from Traefik's Helm repository, which you add
+# once per cluster as the AI Factory repository traefik: see PREREQUISITES.
+#
+# Per-install values to set in the install wizard:
+#   traefik                  global.blueprint.licenseToken, or licenseSecret:
+#                            true with a license Secret created before
+#                            installing (hub.token names it)
+#   opentelemetry-collector  export.endpoint / .clusterName / .apiKey, to
+#                            forward the telemetry (optional)
+#
+# The operator injects the Application Collection pull secret into the
+# collector component, so none is listed here.
+#
+# spec.icon is the Traefik Hub mark from the Traefik Labs brand assets
+# (traefik.io/downloads/traefik-labs-brand-assets.zip, "Traefik Hub -
+# Horizontal Black.svg", symbol only), rendered to a 64x64 PNG.
+apiVersion: ai-factory.suse.com/v1alpha1
+kind: Blueprint
+metadata:
+  labels:
+    ai-factory.suse.com/blueprint-name: traefik-hub-ai-mcp-gateway
+    ai-factory.suse.com/blueprint-version: 0.1.0
+    ai-factory.suse.com/category: security
+  name: traefik-hub-ai-mcp-gateway-0-1-0
+spec:
+  displayName: Traefik Hub AI and MCP Gateway Installer
+  version: 0.1.0
+  source: Partner
+  # yamllint disable-line rule:line-length
+  icon: data:image/png;base64,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
+  description: |
+    Installs Traefik Hub with the AI Gateway and MCP Gateway enabled, plus
+    the SUSE OpenTelemetry Collector for its traces and metrics. It creates
+    no route: you add the routes for the model and MCP servers you run.
+
+    PREREQUISITES
+    1) Add Traefik's Helm repository once per cluster. In the AI Factory
+       UI: Settings > Repositories > Add Repository, name traefik, type
+       Helm, URL https://traefik.github.io/charts, then Apply.
+       Or:
+         kubectl -n aif-operator patch settings.ai-factory.suse.com settings \
+           --type=json -p '[{"op":"add","path":"/spec/customRepos/-",
+           "value":{"name":"traefik","type":"helm",
+           "url":"https://traefik.github.io/charts"}}]'
+
+    2) Get a Traefik Hub license key. Each install needs its own key.
+       Request a trial at https://info.traefik.io/traefik-hub-signup
+
+    3) Give the key in one of two ways:
+       a) In this wizard, open the traefik component's YAML and set:
+            global:
+              blueprint:
+                licenseToken: <license-key>
+          AI Factory then keeps the key in plain text in the workload.
+       b) Before you install, create the Secret in the target namespace:
+            kubectl create namespace traefik-hub-ai-mcp-gateway-system
+            kubectl -n traefik-hub-ai-mcp-gateway-system \
+              create secret generic traefik-hub-license \
+              --from-literal=token=<license-key>
+          Then set licenseSecret: true under global.blueprint.
+       Without either, the install stops; the traefik component's Fleet
+       HelmOp shows why.
+
+    NEXT STEPS
+    Add routes for your model and MCP servers, and an Ingress to reach
+    them. Example routes, an Ingress and all settings:
+    https://github.com/SUSE/partner-blueprints/blob/main/partners/traefik/README.traefik-hub-ai-mcp-gateway.md
+    Traefik Hub documentation: https://doc.traefik.io/traefik-hub/
+  components:
+    # --- Gateway: the official Traefik Helm chart, running Traefik Hub --------
+    - chartName: traefik
+      chartRepo: traefik
+      chartVersion: 42.1.0
+      releaseName: traefik-hub
+      values:
+        global:
+          blueprint:
+            # The license key: this install creates the Secret that hub.token
+            # names from it. Set this or licenseSecret, not both.
+            licenseToken: ""
+            # true: you created Secret traefik-hub-license, key token, before
+            # installing. That keeps the key out of the AIWorkload, the Fleet
+            # objects and the Helm release.
+            licenseSecret: false
+        image:
+          registry: ghcr.io
+          repository: traefik/traefik-hub
+          tag: v3.21.4
+        hub:
+          # Name of the Secret with the license key (key token). Its own key:
+          # not the ingress controller's.
+          token: traefik-hub-license
+          aigateway:
+            enabled: true
+          mcpgateway:
+            enabled: true
+        # Roles in this namespace only, no ClusterRole: a backend in another
+        # namespace is reached through an ExternalName Service in this one.
+        rbac:
+          namespaced: true
+        ingressClass:
+          enabled: false
+        providers:
+          kubernetesCRD:
+            # Only resources with this ingressClassName. An ingress
+            # controller without this setting ignores them, and this Traefik
+            # ignores theirs.
+            ingressClass: traefik-hub-ai-mcp-gateway
+            allowExternalNameServices: true
+          kubernetesIngress:
+            enabled: false
+        service:
+          spec:
+            type: ClusterIP
+        ports:
+          web:
+            # An Ingress of the cluster's ingress controller terminates TLS
+            # and forwards plain HTTP with X-Forwarded-*. Trusting it from
+            # in-cluster addresses passes the client's scheme and address on
+            # to the backends and the access log.
+            forwardedHeaders:
+              trustedIPs:
+                - 10.0.0.0/8
+                - 172.16.0.0/12
+                - 192.168.0.0/16
+                - 100.64.0.0/10
+                - "fc00::/7"
+          websecure:
+            expose:
+              default: false
+        tracing:
+          serviceName: traefik-hub-ai-mcp-gateway
+          otlp:
+            enabled: true
+            http:
+              enabled: true
+              endpoint: http://otel-collector:4318/v1/traces
+        metrics:
+          otlp:
+            enabled: true
+            serviceName: traefik-hub-ai-mcp-gateway
+            http:
+              enabled: true
+              endpoint: http://otel-collector:4318/v1/metrics
+        extraObjects:
+          # Needs a license: licenseToken, or licenseSecret: true. With
+          # licenseToken this install creates the license Secret that
+          # hub.token names; with licenseSecret that Secret must exist before
+          # installing, or the Traefik pod does not start.
+          - |
+            {{- $b := .Values.global.blueprint }}
+            {{- if not (kindIs "bool" $b.licenseSecret) }}
+            {{- fail "global.blueprint.licenseSecret must be true or false" }}
+            {{- end }}
+            {{- $token := $b.licenseToken | default "" | trim }}
+            {{- if and $token $b.licenseSecret }}
+            {{- fail "Set licenseToken or licenseSecret: true, not both." }}
+            {{- end }}
+            {{- if not (or $token $b.licenseSecret) }}
+            {{- fail (print "Set these values of the traefik component, under global.blueprint: licenseToken (or licenseSecret: true)."
+              " Get a license key with a trial: https://info.traefik.io/traefik-hub-signup") }}
+            {{- end }}
+            {{- with $token }}
+            apiVersion: v1
+            kind: Secret
+            metadata:
+              name: {{ $.Values.hub.token }}
+            type: Opaque
+            data:
+              token: {{ . | b64enc }}
+            {{- end }}
+
+    # --- Telemetry: the SUSE Application Collection OpenTelemetry Collector ----
+    - chartName: opentelemetry-collector
+      chartRepo: application-collection
+      chartVersion: 0.174.2
+      releaseName: otel-collector
+      values:
+        # Traefik sends OTLP/HTTP to otel-collector:4318 in this namespace.
+        # The debug exporter logs a summary of what arrives, so the
+        # collector works with no setting; with export.endpoint set it also
+        # forwards everything over OTLP/gRPC, e.g. to SUSE Observability.
+        # (The chart renders config and extraManifests through tpl.)
+        export:
+          endpoint: ""      # OTLP gRPC host:port, e.g. otlp-observability.example.com:443
+          clusterName: ""   # cluster name shown in SUSE Observability
+          apiKey: ""        # SUSE Observability API key (stored in a Secret)
+        fullnameOverride: otel-collector
+        mode: deployment
+        image:
+          # contrib ships the bearertokenauth extension.
+          tag: "0.161.0-contrib-16.2"
+        extraManifests:
+          - apiVersion: v1
+            kind: Secret
+            metadata:
+              name: otlp-export
+            type: Opaque
+            stringData:
+              # The extension refuses an empty token, also when no exporter
+              # uses it.
+              api-key: '{{ .Values.export.apiKey | default "unset" }}'
+        extraEnvs:
+          - name: OTLP_EXPORT_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: otlp-export
+                key: api-key
+        config:
+          extensions:
+            bearertokenauth:
+              scheme: SUSEObservability
+              token: "${env:OTLP_EXPORT_API_KEY}"
+          receivers:
+            otlp:
+              protocols:
+                grpc:
+                  endpoint: ${env:MY_POD_IP}:4317
+                http:
+                  endpoint: ${env:MY_POD_IP}:4318
+          processors:
+            batch: {}
+            resource:
+              attributes:
+                - key: k8s.cluster.name
+                  value: '{{ .Values.export.clusterName }}'
+                  action: upsert
+          exporters:
+            debug: {}
+            # Takes the place of otlp_grpc/export in the pipelines while
+            # export.endpoint is empty.
+            nop: {}
+            # otlp_grpc, the chart's name for the OTLP gRPC exporter: the
+            # chart renames an "otlp" key, but not inside the templated
+            # pipeline entries below.
+            otlp_grpc/export:
+              endpoint: '{{ .Values.export.endpoint | default "unset.invalid:443" }}'
+              auth:
+                authenticator: bearertokenauth
+              compression: snappy
+          service:
+            extensions:
+              - health_check
+              - bearertokenauth
+            pipelines:
+              traces:
+                receivers: [otlp]
+                processors: [memory_limiter, resource, batch]
+                exporters: [debug, '{{ ternary "otlp_grpc/export" "nop" (ne .Values.export.endpoint "") }}']
+              metrics:
+                receivers: [otlp]
+                processors: [memory_limiter, resource, batch]
+                exporters: [debug, '{{ ternary "otlp_grpc/export" "nop" (ne .Values.export.endpoint "") }}']
+        resources:
+          limits:
+            memory: 512Mi

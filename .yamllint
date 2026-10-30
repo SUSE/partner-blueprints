@@ -1,0 +1,19 @@
+extends: default
+
+rules:
+  # Blueprints embed long Helm values, URLs and descriptions; flag, don't fail.
+  line-length:
+    max: 120
+    level: warning
+  new-line-at-end-of-file:
+    level: warning
+  # Allow both {a: b} and { a: b } flow style.
+  braces:
+    max-spaces-inside: 1
+  brackets:
+    max-spaces-inside: 1
+  # Allow aligned values, e.g. "limits:   { memory: 1Gi }".
+  colons:
+    max-spaces-after: -1
+  # "---" is optional for single-document files.
+  document-start: disable
