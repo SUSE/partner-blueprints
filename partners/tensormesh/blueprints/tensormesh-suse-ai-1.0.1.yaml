@@ -74,133 +74,133 @@ spec:
     integration blueprint, not a SUSE-supported product.
   components:
 
-  # ------------------------------------------------------------------ #
-  # Tier 2a. LMCacheEngine — a per-GPU-node cache server in THIS namespace.
-  # Engine-only render: the operator, webhook and CRDs come from the Tier-1
-  # cluster prerequisite, so they are disabled here. The cluster-wide operator
-  # reconciles this CR into a cache-server DaemonSet in the workload namespace.
-  # ------------------------------------------------------------------ #
-  - chartName: tensormesh-platform
-    chartRepo: tensormesh
-    chartVersion: 1.0.1
-    values:
-      # The coordinator image (and, in Tier 1, the operator image) is PRIVATE and
-      # served from the Tensormesh gateway, so a pull credential must be present in
-      # the Helm values (the chart enforces this at render time). Pre-create a
-      # docker-registry Secret named `tensormesh-gateway-pull` in the workload
-      # namespace holding the customer's artifacts.tensormesh.ai token
-      # (docker-server=artifacts.tensormesh.ai, username=_token, password=<token>);
-      # the coordinator below references it by name. (Alternative: set
-      # imagePullSecret.password=<token> and the chart creates + wires the Secret
-      # itself — but keep the token out of this Blueprint source.)
-      # Fixed name so the vLLM component below can reference this engine CR in its
-      # lmcache-engine annotation, independent of the release name.
-      fullnameOverride: tm-cache
-      crds:
-        enabled: false             # CRDs are installed once by the Tier-1 prerequisite
-      operator:
-        enabled: false             # operator runs cluster-wide (Tier 1), not per-workload
-      webhook:
-        enabled: false             # webhook belongs to the Tier-1 operator
-      engine:
-        enabled: true              # create an LMCacheEngine CR in this namespace
-        spec:
-          # Export the cache server's KV memory pool over cross-process CUDA IPC.
-          # Required for offload on a shared GPU node (without it the engine fails
-          # at KV registration).
-          privileged: true
-          # The engine cache server runs the OSS LMCache image. Its LMCache
-          # version MUST match the vLLM image below, or the MP wire protocol will
-          # not line up. Chart 1.0.1 uses LMCache v0.5.6.
-          image:
-            repository: lmcache/vllm-openai
-            tag: v0.5.6
-          l1:
-            # L1 KV-cache size — a host-RAM tier (not GPU). Raise for larger
-            # working sets.
-            sizeGB: 20
-      coordinator:
-        enabled: true              # fleet coordinator the engine registers with (same namespace)
-        # No image override: chart 1.0.1 defaults the coordinator to the private
-        # coordinator-controllers image (v0.5.6) served from the Tensormesh gateway.
-        spec:
-          # Pull the private coordinator image using the pre-created gateway Secret
-          # (see the imagePullSecret note at the top of these values).
-          imagePullSecrets:
-            - name: tensormesh-gateway-pull
+    # ------------------------------------------------------------------ #
+    # Tier 2a. LMCacheEngine — a per-GPU-node cache server in THIS namespace.
+    # Engine-only render: the operator, webhook and CRDs come from the Tier-1
+    # cluster prerequisite, so they are disabled here. The cluster-wide operator
+    # reconciles this CR into a cache-server DaemonSet in the workload namespace.
+    # ------------------------------------------------------------------ #
+    - chartName: tensormesh-platform
+      chartRepo: tensormesh
+      chartVersion: 1.0.1
+      values:
+        # The coordinator image (and, in Tier 1, the operator image) is PRIVATE and
+        # served from the Tensormesh gateway, so a pull credential must be present in
+        # the Helm values (the chart enforces this at render time). Pre-create a
+        # docker-registry Secret named `tensormesh-gateway-pull` in the workload
+        # namespace holding the customer's artifacts.tensormesh.ai token
+        # (docker-server=artifacts.tensormesh.ai, username=_token, password=<token>);
+        # the coordinator below references it by name. (Alternative: set
+        # imagePullSecret.password=<token> and the chart creates + wires the Secret
+        # itself — but keep the token out of this Blueprint source.)
+        # Fixed name so the vLLM component below can reference this engine CR in its
+        # lmcache-engine annotation, independent of the release name.
+        fullnameOverride: tm-cache
+        crds:
+          enabled: false             # CRDs are installed once by the Tier-1 prerequisite
+        operator:
+          enabled: false             # operator runs cluster-wide (Tier 1), not per-workload
+        webhook:
+          enabled: false             # webhook belongs to the Tier-1 operator
+        engine:
+          enabled: true              # create an LMCacheEngine CR in this namespace
+          spec:
+            # Export the cache server's KV memory pool over cross-process CUDA IPC.
+            # Required for offload on a shared GPU node (without it the engine fails
+            # at KV registration).
+            privileged: true
+            # The engine cache server runs the OSS LMCache image. Its LMCache
+            # version MUST match the vLLM image below, or the MP wire protocol will
+            # not line up. Chart 1.0.1 uses LMCache v0.5.6.
+            image:
+              repository: lmcache/vllm-openai
+              tag: v0.5.6
+            l1:
+              # L1 KV-cache size — a host-RAM tier (not GPU). Raise for larger
+              # working sets.
+              sizeGB: 20
+        coordinator:
+          enabled: true              # fleet coordinator the engine registers with (same namespace)
+          # No image override: chart 1.0.1 defaults the coordinator to the private
+          # coordinator-controllers image (v0.5.6) served from the Tensormesh gateway.
+          spec:
+            # Pull the private coordinator image using the pre-created gateway Secret
+            # (see the imagePullSecret note at the top of these values).
+            imagePullSecrets:
+              - name: tensormesh-gateway-pull
 
-  # ------------------------------------------------------------------ #
-  # Tier 2b. vLLM serving — SUSE Application Collection "vLLM Production Stack"
-  # (chart vllm-stack). The chart renders vLLM via `command: [vllm, serve, ...]`
-  # and appends vllmConfig.extraArgs to it. The cache connection is wired here
-  # in-values (not by a webhook): --kv-transfer-config is appended and its JSON is
-  # read from the engine's <engine>-connection ConfigMap via an env var. The
-  # chart's built-in LMCache is turned off so the single cache is Tensormesh's.
-  # ------------------------------------------------------------------ #
-  - chartName: vllm-stack
-    chartRepo: application-collection
-    chartVersion: 0.1.13
-    values:
-      servingEngineSpec:
-        runtimeClassName: nvidia
-        modelSpec:
-          - name: qwen25-1-5b
-            # The vLLM image must CONTAIN LMCache (the --kv-transfer-config flag
-            # loads lmcache's MP connector module), and its LMCache version MUST match
-            # the engine (v0.5.6) or the MP wire protocol will not line up. This image
-            # bundles LMCache 0.5.6 (SUSE Application Collection), matching chart 1.0.1.
-            registry: dp.apps.rancher.io
-            repository: containers/lmcache-vllm-openai
-            tag: "0.5.6-nvidia-1.4"
-            modelURL: Qwen/Qwen2.5-1.5B-Instruct
-            replicaCount: 1
-            requestCPU: 6
-            requestMemory: "16Gi"
-            requestGPU: 1
-            pvcStorage: "50Gi"
-            # Supply the cache connection JSON to vLLM as an env var. The engine's
-            # <engine>-connection ConfigMap (name derives from the Tier-2a
-            # fullnameOverride tm-cache → tm-cache-default-engine) holds it under the
-            # kv-transfer-config.json key. Must be in the same namespace
-            # (configMapKeyRef is namespace-local). A wrong name/key fails the pod
-            # loudly (CreateContainerConfigError) rather than starting without cache.
-            env:
-              - name: LMCACHE_KV_CONFIG
-                valueFrom:
-                  configMapKeyRef:
-                    name: tm-cache-default-engine-connection
-                    key: kv-transfer-config.json
-            vllmConfig:
-              # One GPU: a single tensor-parallel shard. The chart defaults this to 2,
-              # which would require two GPUs.
-              tensorParallelSize: 1
-              # Serve the model generatively. The chart defaults to a pooling runner
-              # that converts the model to embeddings (runner: pooling, convert: embed);
-              # "auto" keeps it generative so chat/completions and the KV cache path
-              # work (no --convert is emitted).
-              runner: "auto"
-              maxModelLen: 16384
-              dtype: bfloat16
-              # Leave GPU headroom for the cache buffer.
-              gpuMemoryUtilization: 0.6
-              # Force KV through LMCache, not vLLM's own prefix cache (required).
-              enablePrefixCaching: false
-              extraArgs:
-                # Disable CUDA graphs so the KV pool is IPC-exportable; without it the
-                # engine hits cudaErrorMapBufferObjectFailed.
-                - "--enforce-eager"
-                # Attach the Tensormesh cache: append --kv-transfer-config to the vLLM
-                # command. Kubernetes expands $(LMCACHE_KV_CONFIG) from the env var
-                # above, so the connector config comes from the engine ConfigMap.
-                - "--kv-transfer-config"
-                - "$(LMCACHE_KV_CONFIG)"
-            # Turn the chart's built-in LMCache OFF so the single cache is provided by
-            # Tensormesh Platform. The chart defaults this ON, which would add a second
-            # --kv-transfer-config for an in-process connector and conflict.
-            lmcacheConfig:
-              enabled: false
-      routerSpec:
-        enableRouter: true
-        serviceType: ClusterIP
-        containerPort: 8000
-        servicePort: 80
+    # ------------------------------------------------------------------ #
+    # Tier 2b. vLLM serving — SUSE Application Collection "vLLM Production Stack"
+    # (chart vllm-stack). The chart renders vLLM via `command: [vllm, serve, ...]`
+    # and appends vllmConfig.extraArgs to it. The cache connection is wired here
+    # in-values (not by a webhook): --kv-transfer-config is appended and its JSON is
+    # read from the engine's <engine>-connection ConfigMap via an env var. The
+    # chart's built-in LMCache is turned off so the single cache is Tensormesh's.
+    # ------------------------------------------------------------------ #
+    - chartName: vllm-stack
+      chartRepo: application-collection
+      chartVersion: 0.1.13
+      values:
+        servingEngineSpec:
+          runtimeClassName: nvidia
+          modelSpec:
+            - name: qwen25-1-5b
+              # The vLLM image must CONTAIN LMCache (the --kv-transfer-config flag
+              # loads lmcache's MP connector module), and its LMCache version MUST match
+              # the engine (v0.5.6) or the MP wire protocol will not line up. This image
+              # bundles LMCache 0.5.6 (SUSE Application Collection), matching chart 1.0.1.
+              registry: dp.apps.rancher.io
+              repository: containers/lmcache-vllm-openai
+              tag: "0.5.6-nvidia-1.4"
+              modelURL: Qwen/Qwen2.5-1.5B-Instruct
+              replicaCount: 1
+              requestCPU: 6
+              requestMemory: "16Gi"
+              requestGPU: 1
+              pvcStorage: "50Gi"
+              # Supply the cache connection JSON to vLLM as an env var. The engine's
+              # <engine>-connection ConfigMap (name derives from the Tier-2a
+              # fullnameOverride tm-cache → tm-cache-default-engine) holds it under the
+              # kv-transfer-config.json key. Must be in the same namespace
+              # (configMapKeyRef is namespace-local). A wrong name/key fails the pod
+              # loudly (CreateContainerConfigError) rather than starting without cache.
+              env:
+                - name: LMCACHE_KV_CONFIG
+                  valueFrom:
+                    configMapKeyRef:
+                      name: tm-cache-default-engine-connection
+                      key: kv-transfer-config.json
+              vllmConfig:
+                # One GPU: a single tensor-parallel shard. The chart defaults this to 2,
+                # which would require two GPUs.
+                tensorParallelSize: 1
+                # Serve the model generatively. The chart defaults to a pooling runner
+                # that converts the model to embeddings (runner: pooling, convert: embed);
+                # "auto" keeps it generative so chat/completions and the KV cache path
+                # work (no --convert is emitted).
+                runner: "auto"
+                maxModelLen: 16384
+                dtype: bfloat16
+                # Leave GPU headroom for the cache buffer.
+                gpuMemoryUtilization: 0.6
+                # Force KV through LMCache, not vLLM's own prefix cache (required).
+                enablePrefixCaching: false
+                extraArgs:
+                  # Disable CUDA graphs so the KV pool is IPC-exportable; without it the
+                  # engine hits cudaErrorMapBufferObjectFailed.
+                  - "--enforce-eager"
+                  # Attach the Tensormesh cache: append --kv-transfer-config to the vLLM
+                  # command. Kubernetes expands $(LMCACHE_KV_CONFIG) from the env var
+                  # above, so the connector config comes from the engine ConfigMap.
+                  - "--kv-transfer-config"
+                  - "$(LMCACHE_KV_CONFIG)"
+              # Turn the chart's built-in LMCache OFF so the single cache is provided by
+              # Tensormesh Platform. The chart defaults this ON, which would add a second
+              # --kv-transfer-config for an in-process connector and conflict.
+              lmcacheConfig:
+                enabled: false
+        routerSpec:
+          enableRouter: true
+          serviceType: ClusterIP
+          containerPort: 8000
+          servicePort: 80
