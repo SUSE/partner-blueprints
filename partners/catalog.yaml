@@ -16,6 +16,7 @@ spec:
   blueprints:
     - name: alchemistudio-with-vllm
       category: platform
+    - name: tensormesh-suse-ai
     - name: traefik-hub-ai-mcp-gateway
       category: security
     - name: traefik-hub-ai-mcp-governance-demo
