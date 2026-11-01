@@ -11,8 +11,11 @@ spec:
     by SUSE. For assistance or to report issues, please contact the relevant partner
     directly.
   categories:
+    - platform
     - security
   blueprints:
+    - name: alchemistudio-with-vllm
+      category: platform
     - name: traefik-hub-ai-mcp-gateway
       category: security
     - name: traefik-hub-ai-mcp-governance-demo
