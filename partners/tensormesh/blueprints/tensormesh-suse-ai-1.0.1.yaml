@@ -70,7 +70,9 @@ spec:
     lmcache/vllm-openai image; the tensormesh-platform Helm chart and the private
     operator, coordinator and CacheBlend images ship via the Tensormesh Key
     Distribution gateway (artifacts.tensormesh.ai) and are pulled with the
-    customer's registry token (see imagePullSecret below). This is a community /
+    customer's registry token (see imagePullSecret below). To get a token, apply
+    for a free 30-day trial at https://artifacts.tensormesh.ai/trial/suse, or
+    contact sales@tensormesh.ai for a licensed key. This is a community /
     integration blueprint, not a SUSE-supported product.
   components:
 
