@@ -61,6 +61,10 @@ The operator, coordinator and CacheBlend images are **private** on
 engine/serving image is the public open-source `lmcache/vllm-openai`). The chart
 enforces, at render time, that a pull credential is present in the Helm values.
 
+To get a token, apply for a free 30-day trial (self-serve) at
+<https://artifacts.tensormesh.ai/trial/suse>, or contact sales@tensormesh.ai for a
+licensed key.
+
 Pre-create a `docker-registry` Secret named **`tensormesh-gateway-pull`** in the
 workload namespace; the blueprint references it on the coordinator:
 
