@@ -48,24 +48,25 @@ spec:
          Replications) and "Also tag each copy with its source revision"
          on, which tags each copy sha-<12-char Hub commit>. Add a tag
          immutability rule for sha-* in that project so the tag cannot
-         be moved;
-       - the modctl image at <registry>/tools/modctl:v0.2.2, in a public
-         project or one the pull Secret below can read.
+         be moved.
+       The modctl init container image is public:
+       8gears.container-registry.com/library/modctl:v0.2.2 (amd64, arm64).
+       For an air-gapped cluster, copy it into your 8gcr and change
+       initContainer.registry and initContainer.image.
        Details:
        https://github.com/SUSE/partner-blueprints/blob/main/partners/8gears/README.md
     2) Point the blueprint at your registry: in this wizard, open the
-       vllm-stack component's YAML and set initContainer.registry and the
-       last initContainer argument (the model reference) to your 8gcr. Both
-       default to the placeholder harbor.example.com, which must be
-       replaced.
+       vllm-stack component's YAML and set the last initContainer argument
+       (the model reference) to your 8gcr. It defaults to the placeholder
+       harbor.example.com, which must be replaced.
     3) For private projects, create a pull Secret with a read-only 8gcr
        robot account in the namespace you choose in this wizard, before
        installing:
          kubectl -n <namespace> create secret docker-registry \
            8gcr-model-pull --docker-server=<registry-host> \
            --docker-username='<robot-name>' --docker-password='<robot-secret>'
-       The kubelet uses it for the modctl image and modctl uses it for the
-       model.
+       modctl uses it to pull the model, and the kubelet uses it for the
+       modctl image if you copied that into a private project.
     4) NVIDIA GPU nodes with the nvidia runtime class and at least 24 GB of
        VRAM (L4, A10G, L40S, A100, H100), a default StorageClass and
        cert-manager.
@@ -100,7 +101,8 @@ spec:
               # Local directory filled by the init container. vLLM loads it
               # as a Hugging Face model directory.
               modelURL: /data/models/apertus-8b-b946d40447b2
-              # Lets the kubelet pull the modctl image from 8gcr. Optional:
+              # Lets the kubelet pull the modctl image if it is copied into a
+              # private 8gcr project. Optional:
               # a missing Secret only produces a kubelet warning.
               imagePullSecret: 8gcr-model-pull
               env:
@@ -127,12 +129,14 @@ spec:
                 cpuOffloadingBufferSize: "10"
               initContainer:
                 name: fetch-model
-                # modctl v0.2.2 built with CGO_ENABLED=0; the release binary is
-                # glibc-static and panics resolving uid 65532 in distroless.
+                # modctl v0.2.2 built from source with upstream build/Dockerfile
+                # (CGO_ENABLED=0). The v0.2.2 release binary is glibc-static and
+                # panics resolving uid 65532 in distroless, and v0.2.2 predates
+                # the upstream image at ghcr.io/modelpack/modctl.
                 # SUSE Application Collection chart: registry, image and tag are
                 # separate fields (upstream vllm-stack takes one image string).
-                registry: harbor.example.com
-                image: tools/modctl
+                registry: 8gears.container-registry.com
+                image: library/modctl
                 tag: v0.2.2
                 args:
                   - pull

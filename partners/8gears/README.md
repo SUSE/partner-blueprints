@@ -29,11 +29,11 @@ and not part of 8gcr. Reused upstream work and licenses are listed in
 
 ## Components
 
-| Component                                       | Source                                     | Role                                                        |
-| ----------------------------------------------- | ------------------------------------------ | ----------------------------------------------------------- |
-| `vllm-stack`                                    | `application-collection/vllm-stack` 0.1.13 | vLLM engine and router with an OpenAI-compatible API        |
-| `fetch-model`, init container of the engine pod | `<your 8gcr>/tools/modctl:v0.2.2`          | streams the ModelPack artifact from 8gcr into the model PVC |
-| `open-webui`                                    | `application-collection/open-webui` 8.19.1 | chat UI                                                     |
+| Component                                       | Source                                                | Role                                                        |
+| ----------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------- |
+| `vllm-stack`                                    | `application-collection/vllm-stack` 0.1.13            | vLLM engine and router with an OpenAI-compatible API        |
+| `fetch-model`, init container of the engine pod | `8gears.container-registry.com/library/modctl:v0.2.2` | streams the ModelPack artifact from 8gcr into the model PVC |
+| `open-webui`                                    | `application-collection/open-webui` 8.19.1            | chat UI                                                     |
 
 The CPU variant uses the upstream CPU build
 `docker.io/vllm/vllm-openai-cpu:v0.33.0` as its engine image, because
@@ -68,9 +68,8 @@ Application Collection only ships a CUDA build.
    project to the 8gcr inside the site.
 5. When the engine pod starts, the `fetch-model` init container runs
    `modctl pull --extract-from-remote` and writes the files to a directory
-   named after the model and revision on the model PVC. The kubelet pulls
-   the modctl image, and modctl pulls the model, both with the optional
-   Secret `8gcr-model-pull`.
+   named after the model and revision on the model PVC. modctl pulls the
+   model with the optional Secret `8gcr-model-pull`.
 6. vLLM loads that directory (`modelURL`) and serves it under the name set
    with `--served-model-name`. The engine runs with `HF_HUB_OFFLINE=1`, so
    any attempt to reach the Hub fails instead of passing unnoticed.
@@ -104,15 +103,19 @@ In 8gcr:
 
 - 8gcr 2.16.0 or later, which adds the Hugging Face import.
 - The model, synced as described in "How it works".
-- The modctl image at `<registry-host>/tools/modctl:v0.2.2`, in a public
-  project or in one the pull Secret can read. Build it from
-  [modelpack/modctl](https://github.com/modelpack/modctl) v0.2.2 with
-  `CGO_ENABLED=0`. The prebuilt release binary is linked against glibc and
-  panics in the distroless image when it looks up its own user.
 - For private projects, a robot account that can pull from them.
 
+The modctl image is public at
+`8gears.container-registry.com/library/modctl:v0.2.2` (amd64 and arm64). It
+is built from the modctl v0.2.2 source with the upstream `build/Dockerfile`
+(`CGO_ENABLED=0`, distroless nonroot). The v0.2.2 release binary is linked
+against glibc and panics in a distroless image when it looks up its own
+user, and v0.2.2 predates the upstream image `ghcr.io/modelpack/modctl`.
+Once modctl publishes that image, you can use it instead.
+
 For a fully air-gapped cluster, the model is only one of the artifacts to
-mirror. The vLLM, router and Open WebUI images and charts come from
+mirror. Copy the modctl image into your 8gcr as well and change
+`initContainer.registry` and `initContainer.image`. The vLLM, router and Open WebUI images and charts come from
 Application Collection, and the CPU engine image from Docker Hub, so they
 need a mirror as well.
 
@@ -137,8 +140,8 @@ blueprint list.
    ```
 
 2. Install the blueprint. In the wizard, open the `vllm-stack` component's
-   YAML and set `initContainer.registry` and the last `initContainer.args`
-   entry to your 8gcr. Use the `sha-` tag or the digest for the model, for
+   YAML and set the last `initContainer.args` entry (the model reference)
+   to your 8gcr. Use the `sha-` tag or the digest for the model, for
    example
    `harbor.example.com/models/swiss-ai/apertus-8b-instruct-2509:sha-b946d40447b2`.
    For another revision, change the revision suffix in `--extract-dir` and
