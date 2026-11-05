@@ -1,0 +1,215 @@
+# SUSE AI Factory blueprint: a chat assistant whose model weights come from
+# 8gears Container Registry (8gcr, Harbor) as a CNCF ModelPack OCI artifact,
+# not from huggingface.co. Model, chart values and sizing follow the SUSE
+# community blueprint apertus-8b-chat-1.0.0 (SUSE/community-blueprints#3); the
+# difference is where the weights come from.
+#
+# How the weights load: an init container runs modctl (CNCF ModelPack CLI)
+# and streams the artifact from 8gcr straight into the model PVC
+# (--extract-from-remote, no local copy). vLLM then serves the local
+# directory, so the engine never contacts the Hugging Face Hub.
+#
+# Per-install values to set in the install wizard (vllm-stack component):
+#   servingEngineSpec.modelSpec[0].initContainer.args[-1]
+#                       the model reference in your 8gcr, ideally by digest
+#   Secret 8gcr-model-pull (optional, see PREREQUISITES in the description)
+#
+# Charts: vllm-stack and open-webui from SUSE Application Collection.
+# modctl: Apache-2.0, https://github.com/modelpack/modctl
+---
+apiVersion: ai-factory.suse.com/v1alpha1
+kind: Blueprint
+metadata:
+  name: 8gcr-governed-model-chat-0-1-0
+  labels:
+    ai-factory.suse.com/blueprint-name: 8gcr-governed-model-chat
+    ai-factory.suse.com/blueprint-version: 0.1.0
+    ai-factory.suse.com/category: platform
+spec:
+  source: Partner
+  displayName: Governed Model Chat from 8gears Container Registry (vLLM, GPU)
+  version: 0.1.0
+  description: |
+    Chat assistant that loads its model from your own 8gears Container
+    Registry (8gcr, Harbor) instead of huggingface.co. The model is a CNCF
+    ModelPack OCI artifact pinned to a Hugging Face commit, so the robot
+    accounts, audit log, retention and replication that already apply to
+    your container images apply to the model as well. The cluster needs no
+    access to huggingface.co.
+
+    Default model: swiss-ai/Apertus-8B-Instruct-2509 (Apache-2.0), served by
+    the vLLM Production Stack behind an OpenAI-compatible API, with Open
+    WebUI as the chat UI.
+
+    PREREQUISITES
+    1) An 8gcr 2.16.0 or later registry that the cluster can reach, holding:
+       - the model, copied from Hugging Face by a pull replication rule
+         with a Hugging Face endpoint as source (Administration >
+         Replications) and "Also tag each copy with its source revision"
+         on, which tags each copy sha-<12-char Hub commit>. Add a tag
+         immutability rule for sha-* in that project so the tag cannot
+         be moved;
+       - the modctl image at <registry>/tools/modctl:v0.2.2, in a public
+         project or one the pull Secret below can read.
+       Details:
+       https://github.com/SUSE/partner-blueprints/blob/main/partners/8gears/README.md
+    2) Point the blueprint at your registry: in this wizard, open the
+       vllm-stack component's YAML and set initContainer.registry and the
+       last initContainer argument (the model reference) to your 8gcr. Both
+       default to the placeholder harbor.example.com, which must be
+       replaced.
+    3) For private projects, create a pull Secret with a read-only 8gcr
+       robot account in the namespace you choose in this wizard, before
+       installing:
+         kubectl -n <namespace> create secret docker-registry \
+           8gcr-model-pull --docker-server=<registry-host> \
+           --docker-username='<robot-name>' --docker-password='<robot-secret>'
+       The kubelet uses it for the modctl image and modctl uses it for the
+       model.
+    4) NVIDIA GPU nodes with the nvidia runtime class and at least 24 GB of
+       VRAM (L4, A10G, L40S, A100, H100), a default StorageClass and
+       cert-manager.
+
+    The engine pod requests 4 CPU, 32Gi RAM, one GPU and a 50Gi PVC for the
+    weights, which are about 16 GB in BF16. Open WebUI is exposed through an
+    Ingress at https://governed-chat; point DNS for "governed-chat" at the
+    ingress controller.
+
+    The registry controls cover the model supply chain only. Open WebUI
+    lets anyone who reaches the Ingress sign up, and the vLLM API has no
+    key; set ENABLE_SIGNUP=false and an API key before sharing the URL.
+    Maintained and supported by 8gears (container-registry.com).
+
+  components:
+    - chartName: vllm-stack
+      chartRepo: application-collection
+      chartVersion: 0.1.13
+      values:
+        servingEngineSpec:
+          runtimeClassName: nvidia
+          # modctl runs as distroless nonroot (uid/gid 65532); without this
+          # it cannot write to a freshly provisioned, root-owned PVC.
+          securityContext:
+            fsGroup: 65532
+          # One model PVC (RWO) and usually one GPU per pod: a rolling update
+          # would wait forever for a second GPU or a second volume attach.
+          strategy:
+            type: Recreate
+          modelSpec:
+            - name: apertus-8b
+              # Local directory filled by the init container. vLLM loads it
+              # as a Hugging Face model directory.
+              modelURL: /data/models/apertus-8b-b946d40447b2
+              # Lets the kubelet pull the modctl image from 8gcr. Optional:
+              # a missing Secret only produces a kubelet warning.
+              imagePullSecret: 8gcr-model-pull
+              env:
+                # modelURL is a local path, so vLLM has no reason to call the
+                # Hub; this makes any attempt fail loudly.
+                - name: HF_HUB_OFFLINE
+                  value: "1"
+              replicaCount: 1
+              requestCPU: 4
+              requestMemory: 32Gi
+              requestGPU: 1
+              pvcStorage: 50Gi
+              enableTool: true
+              toolCallParser: apertus
+              vllmConfig:
+                enablePrefixCaching: true
+                maxModelLen: 16384
+                gpuMemoryUtilization: 0.9
+                extraArgs:
+                  # Without it the model is listed under its file path.
+                  - --served-model-name=apertus-8b
+              lmcacheConfig:
+                enabled: true
+                cpuOffloadingBufferSize: "10"
+              initContainer:
+                name: fetch-model
+                # modctl v0.2.2 built with CGO_ENABLED=0; the release binary is
+                # glibc-static and panics resolving uid 65532 in distroless.
+                # SUSE Application Collection chart: registry, image and tag are
+                # separate fields (upstream vllm-stack takes one image string).
+                registry: harbor.example.com
+                image: tools/modctl
+                tag: v0.2.2
+                args:
+                  - pull
+                  - --extract-from-remote
+                  - --extract-dir=/data/models/apertus-8b-b946d40447b2
+                  # Revision tag for Hub commit b946d40447b2. The directory
+                  # above carries the same revision, so a new revision never
+                  # mixes with files of the old one.
+                  - harbor.example.com/models/swiss-ai/apertus-8b-instruct-2509:sha-b946d40447b2
+                mountPvcStorage: true
+                env:
+                  - name: DOCKER_CONFIG
+                    value: /etc/8gcr
+                extraVolumeMounts:
+                  - name: model-pull-secret
+                    mountPath: /etc/8gcr
+                    readOnly: true
+              # vLLM needs more /dev/shm than the 64 MiB container default; the
+              # chart mounts one only when tensorParallelSize is set.
+              extraVolumeMounts:
+                - name: dshm
+                  mountPath: /dev/shm
+              extraVolumes:
+                - name: dshm
+                  emptyDir:
+                    medium: Memory
+                    sizeLimit: 1Gi
+                - name: model-pull-secret
+                  secret:
+                    secretName: 8gcr-model-pull
+                    # Public projects need no credentials.
+                    optional: true
+                    items:
+                      - key: .dockerconfigjson
+                        path: config.json
+        routerSpec:
+          enableRouter: true
+          routingLogic: roundrobin
+          # Router imports LMCache at startup (~20s); chart default
+          # startup probe (~20s) kills it. Allow up to ~2 min.
+          startupProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 24
+            httpGet:
+              path: /health
+              port: router-port
+    - chartName: open-webui
+      chartRepo: application-collection
+      chartVersion: 8.19.1
+      values:
+        global:
+          tls:
+            source: suse-private-ai
+            issuerName: suse-private-ai
+        image:
+          registry: dp.apps.rancher.io
+          repository: containers/open-webui
+          tag: 0.6.41-15.2
+        ollama:
+          enabled: false
+        enableOpenaiApi: true
+        openaiBaseApiUrl: http://vllm-stack-router-service/v1
+        openaiApiKey: dummy
+        extraEnvVars:
+          - name: DEFAULT_USER_ROLE
+            value: user
+          - name: ENABLE_SIGNUP
+            value: "true"
+          - name: GLOBAL_LOG_LEVEL
+            value: INFO
+        persistence:
+          enabled: true
+          size: 20Gi
+        ingress:
+          enabled: true
+          host: governed-chat
+          tls: true
+          annotations:
+            nginx.ingress.kubernetes.io/ssl-redirect: "true"

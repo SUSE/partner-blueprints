@@ -14,6 +14,10 @@ spec:
     - platform
     - security
   blueprints:
+    - name: 8gcr-governed-model-chat
+      category: platform
+    - name: 8gcr-governed-model-chat-cpu
+      category: platform
     - name: alchemistudio-with-vllm
       category: platform
     - name: tensormesh-suse-ai
