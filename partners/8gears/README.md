@@ -8,8 +8,8 @@ retention and replication as images. 8gcr copies them from Hugging Face
 with a pull replication rule, pinned to the Hub commit, so the clusters
 that serve them need no access to huggingface.co.
 
-| Blueprint CR                                | What it installs                                                                        |
-| ------------------------------------------- | --------------------------------------------------------------------------------------- |
+| Blueprint CR                                    | What it installs                                                                        |
+| ----------------------------------------------- | --------------------------------------------------------------------------------------- |
 | [`8gcr-0.1.0.yaml`](blueprints/8gcr-0.1.0.yaml) | 8gcr with PostgreSQL, and a model chat example (vLLM CPU build, Qwen3-0.6B, Open WebUI) |
 
 ```mermaid
@@ -23,19 +23,18 @@ flowchart LR
   G -- "Harbor replication" --> G2["8gcr (air-gapped site)"]
 ```
 
-The model chat is an example of what 8gcr is used for. Remove the
-`vllm-stack` and `open-webui` components and the setup Job to install 8gcr
-alone. Reused upstream work and licenses are listed in
+The model chat shows one use of 8gcr. To install 8gcr alone, remove the
+`vllm-stack` and `open-webui` components and the setup Job. Reused upstream work and licenses are listed in
 [ATTRIBUTION.md](ATTRIBUTION.md).
 
 ## Components
 
-| Component    | Source                                                             | Role                                                                                       |
-| ------------ | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
-| `postgresql` | `application-collection/postgresql` 0.8.0                          | 8gcr database                                                                              |
-| `harbor`     | `oci://8gears.container-registry.com/8gcr/charts/harbor` 2.1.2     | 8gcr: core, portal, registry, jobservice, exporter and Valkey; plus the example setup Job |
-| `vllm-stack` | `application-collection/vllm-stack` 0.1.13                         | example: vLLM engine (CPU build) and router with an OpenAI-compatible API                  |
-| `open-webui` | `application-collection/open-webui` 8.19.1                         | example: chat UI                                                                           |
+| Component    | Source                                                         | Role                                                                                      |
+| ------------ | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `postgresql` | `application-collection/postgresql` 0.8.0                      | 8gcr database                                                                             |
+| `harbor`     | `oci://8gears.container-registry.com/8gcr/charts/harbor` 2.1.2 | 8gcr: core, portal, registry, jobservice, exporter and Valkey; plus the example setup Job |
+| `vllm-stack` | `application-collection/vllm-stack` 0.1.13                     | example: vLLM engine (CPU build) and router with an OpenAI-compatible API                 |
+| `open-webui` | `application-collection/open-webui` 8.19.1                     | example: chat UI                                                                          |
 
 The 8gcr images are a 2.16.0 pre-release, because the Hugging Face import
 ships in 8gcr 2.16.0. The blueprint moves to the 2.16.0 release tag once
@@ -60,8 +59,8 @@ it is out.
    cluster (`harbor-core:80`, plain HTTP, no DNS or certificate needed).
    It fails and restarts until the copy exists. With the Kubernetes
    restart backoff, that can add up to 5 minutes after the copy is done.
-4. vLLM loads the extracted directory with `HF_HUB_OFFLINE=1`, so any
-   attempt to reach the Hub fails instead of passing unnoticed. Open WebUI
+4. vLLM loads the extracted directory. It runs with `HF_HUB_OFFLINE=1`,
+   so any attempt to reach the Hub fails with an error. Open WebUI
    talks to the router at `http://vllm-stack-router-service/v1`.
 
 8gcr then works like any Harbor: add more Hugging Face rules under
@@ -69,8 +68,7 @@ Administration > Replications, push images and charts, create robot
 accounts for other clusters, and replicate projects to 8gcr instances in
 air-gapped sites.
 
-The registry controls cover the model supply chain. They do not cover who
-uses the chat: Open WebUI lets anyone who reaches the Ingress sign up, and
+Access to the chat is a separate matter from the registry controls. Open WebUI lets anyone who reaches the Ingress sign up, and
 the vLLM API has no key. Set `ENABLE_SIGNUP=false` in Open WebUI and
 `servingEngineSpec.vllmApiKey` in `vllm-stack` (with the same key as
 `openaiApiKey` in Open WebUI) before you share the URL.
@@ -142,20 +140,20 @@ for the chat; the model is listed as `qwen3-0-6b`.
 
 ## Customization
 
-- **Another model:** change `MODEL` and `REVISION` in the setup Job, and in
+- Another model: change `MODEL` and `REVISION` in the setup Job, and in
   `vllm-stack` the model reference, `--extract-dir`, `modelURL`,
   `--served-model-name` and the resource requests. The `sha-` tag is the
   first 12 characters of the Hub commit, shown in the 8gcr replication
   preview.
-- **GPU:** remove `registry`, `repository` and `tag` from the model entry
+- GPU: remove `registry`, `repository` and `tag` from the model entry
   so the chart uses its CUDA vLLM image from Application Collection, set
   `requestGPU: 1`, and remove `runtimeClassName: ""`, `--enforce-eager`
   and `VLLM_CPU_KVCACHE_SPACE`. Not tested on a GPU yet.
-- **8gcr only:** remove the `vllm-stack` and `open-webui` components and
+- 8gcr only: remove the `vllm-stack` and `open-webui` components and
   the two `extraManifests` entries of `harbor`.
-- **Other clusters:** create a read-only robot account in 8gcr and point
+- Other clusters: create a read-only robot account in 8gcr and point
   their modctl init containers at the 8gcr Ingress with a pull Secret.
-- **Air gap:** mirror the 8gcr, PostgreSQL, Valkey, vLLM, Open WebUI and
+- Air gap: mirror the 8gcr, PostgreSQL, Valkey, vLLM, Open WebUI and
   modctl images and charts. Inside the site, replicate the `models` project
   from an 8gcr outside instead of from Hugging Face.
 
