@@ -1,80 +1,73 @@
-# 8gears blueprints for SUSE AI Factory
+# 8gears Container Registry (8gcr) for SUSE AI Factory
 
-These blueprints run a chat assistant whose model weights come from your own
-8gears Container Registry (8gcr) instead of huggingface.co. 8gcr is a Harbor
-distribution that stores AI models as CNCF ModelPack OCI artifacts, next to
-container images and Helm charts, so the model gets the same robot accounts,
-audit log, retention and replication as your images. The cluster that runs
-the model needs no access to huggingface.co.
+The blueprint installs 8gears Container Registry (8gcr) on the AI Factory
+cluster. 8gcr is a Harbor distribution that keeps container images, Helm
+charts and AI models in one registry. Models are stored as CNCF ModelPack
+OCI artifacts and get the same projects, robot accounts, audit log,
+retention and replication as images. 8gcr copies them from Hugging Face
+with a pull replication rule, pinned to the Hub commit, so the clusters
+that serve them need no access to huggingface.co.
 
-| Blueprint CR                                                                                    | What it installs                                                                                         |
-| ----------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| [`8gcr-governed-model-chat-0.1.0.yaml`](blueprints/8gcr-governed-model-chat-0.1.0.yaml)         | vLLM Production Stack and Open WebUI on a GPU node, serving Apertus-8B                                   |
-| [`8gcr-governed-model-chat-cpu-0.1.0.yaml`](blueprints/8gcr-governed-model-chat-cpu-0.1.0.yaml) | The same setup on a node without a GPU, serving Qwen3-0.6B with the vLLM CPU build, for trials and demos |
+| Blueprint CR                                | What it installs                                                                        |
+| ------------------------------------------- | --------------------------------------------------------------------------------------- |
+| [`8gcr-0.1.0.yaml`](blueprints/8gcr-0.1.0.yaml) | 8gcr with PostgreSQL, and a model chat example (vLLM CPU build, Qwen3-0.6B, Open WebUI) |
 
 ```mermaid
 flowchart LR
-  HF[huggingface.co] -- "replication rule, pinned commit" --> G1[8gcr]
-  G1 -- "Harbor replication" --> G2["8gcr (air-gapped site)"]
+  HF[huggingface.co] -- "replication rule, pinned commit" --> G
   subgraph AIF["SUSE AI Factory cluster"]
-    I["init: modctl pull --extract-from-remote"] --> P[(model PVC)]
-    P --> V[vLLM engine] --> R[vLLM router] --> W[Open WebUI]
+    PG[(PostgreSQL)] --- G[8gcr]
+    S[setup Job] -. "creates rule" .-> G
+    G -- "modctl pull" --> I[init: fetch-model] --> V[vLLM engine] --> R[vLLM router] --> W[Open WebUI]
   end
-  G2 -- "robot account, sha- tag or digest" --> I
+  G -- "Harbor replication" --> G2["8gcr (air-gapped site)"]
 ```
 
-All components run on SUSE AI Factory. Open WebUI is an example front end
-and not part of 8gcr. Reused upstream work and licenses are listed in
+The model chat is an example of what 8gcr is used for. Remove the
+`vllm-stack` and `open-webui` components and the setup Job to install 8gcr
+alone. Reused upstream work and licenses are listed in
 [ATTRIBUTION.md](ATTRIBUTION.md).
 
 ## Components
 
-| Component                                       | Source                                                | Role                                                        |
-| ----------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------------- |
-| `vllm-stack`                                    | `application-collection/vllm-stack` 0.1.13            | vLLM engine and router with an OpenAI-compatible API        |
-| `fetch-model`, init container of the engine pod | `8gears.container-registry.com/library/modctl:v0.2.2` | streams the ModelPack artifact from 8gcr into the model PVC |
-| `open-webui`                                    | `application-collection/open-webui` 8.19.1            | chat UI                                                     |
+| Component    | Source                                                             | Role                                                                                       |
+| ------------ | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| `postgresql` | `application-collection/postgresql` 0.8.0                          | 8gcr database                                                                              |
+| `harbor`     | `oci://8gears.container-registry.com/8gcr/charts/harbor` 2.1.2     | 8gcr: core, portal, registry, jobservice, exporter and Valkey; plus the example setup Job |
+| `vllm-stack` | `application-collection/vllm-stack` 0.1.13                         | example: vLLM engine (CPU build) and router with an OpenAI-compatible API                  |
+| `open-webui` | `application-collection/open-webui` 8.19.1                         | example: chat UI                                                                           |
 
-The CPU variant uses the upstream CPU build
-`docker.io/vllm/vllm-openai-cpu:v0.33.0` as its engine image, because
-Application Collection only ships a CUDA build.
+The 8gcr images are a 2.16.0 pre-release, because the Hugging Face import
+ships in 8gcr 2.16.0. The blueprint moves to the 2.16.0 release tag once
+it is out.
 
 ## How it works
 
-1. An 8gcr administrator adds a Hugging Face endpoint under
-   Administration > Registries. The endpoint is source only and asks for
-   a Hugging Face token, nothing else.
-2. Under Administration > Replications, the administrator creates a
-   pull-based replication rule with that endpoint as source. The rule
-   names the model (for example `swiss-ai/Apertus-8B-Instruct-2509`), a
-   revision (branch or tag), optional Include and Exclude file patterns,
-   the destination project, and a manual or scheduled trigger. vLLM needs
-   the weights, the config and the tokenizer files, so leave Include empty
-   unless you know which files the model needs. Set
-   Destination Repository Flattening to "No Flattening" to keep the
-   organization in the path, as the blueprint defaults expect. Preview
-   shows the Hub commit, the tags, the license, the matched files and the
-   digest before anything is copied.
-3. Each run resolves the revision to a Hub commit and stores the files as
-   a ModelPack artifact. A rerun on the same commit with the same file
-   patterns finds the artifact already there and skips it. With "Also tag
-   each copy with its source revision" on, the artifact gets the tag
-   `sha-<12-char commit>` next to the revision tag (for example `main`),
-   which moves with the branch. The artifact page shows the source URL, the
-   full source commit and the license. Pin the blueprint to the `sha-` tag or to the
-   digest, never to the branch tag. A Harbor tag immutability rule for
-   `sha-*` keeps anyone from moving the tag.
-4. For an air-gapped site, a Harbor replication rule copies the model
-   project to the 8gcr inside the site.
-5. When the engine pod starts, the `fetch-model` init container runs
-   `modctl pull --extract-from-remote` and writes the files to a directory
-   named after the model and revision on the model PVC. modctl pulls the
-   model with the optional Secret `8gcr-model-pull`.
-6. vLLM loads that directory (`modelURL`) and serves it under the name set
-   with `--served-model-name`. The engine runs with `HF_HUB_OFFLINE=1`, so
-   any attempt to reach the Hub fails instead of passing unnoticed.
-7. Open WebUI sends requests to the router at
-   `http://vllm-stack-router-service/v1`.
+1. AI Factory installs PostgreSQL and 8gcr. 8gcr reads its admin
+   password, encryption key and database password from the Secret `8gcr`.
+2. The setup Job waits for 8gcr and creates, through the 8gcr API:
+   - a public project `models` with a tag immutability rule for `sha-*`;
+   - a Hugging Face endpoint (with `HF_TOKEN` from the Secret if set);
+   - a pull replication rule for `Qwen/Qwen3-0.6B` at `main`, with
+     "No Flattening" and "Also tag each copy with its source revision".
+
+   Then it starts the rule. The run resolves `main` to a Hub commit and
+   stores the files as a ModelPack artifact tagged `main` and
+   `sha-c1899de289a0`. The artifact page shows the source URL, the commit
+   and the license. The Job is idempotent.
+3. The `fetch-model` init container of the vLLM engine runs
+   `modctl pull --extract-from-remote` against the 8gcr Service inside the
+   cluster (`harbor-core:80`, plain HTTP, no DNS or certificate needed).
+   It fails and restarts until the copy exists. With the Kubernetes
+   restart backoff, that can add up to 5 minutes after the copy is done.
+4. vLLM loads the extracted directory with `HF_HUB_OFFLINE=1`, so any
+   attempt to reach the Hub fails instead of passing unnoticed. Open WebUI
+   talks to the router at `http://vllm-stack-router-service/v1`.
+
+8gcr then works like any Harbor: add more Hugging Face rules under
+Administration > Replications, push images and charts, create robot
+accounts for other clusters, and replicate projects to 8gcr instances in
+air-gapped sites.
 
 The registry controls cover the model supply chain. They do not cover who
 uses the chat: Open WebUI lets anyone who reaches the Ingress sign up, and
@@ -84,114 +77,112 @@ the vLLM API has no key. Set `ENABLE_SIGNUP=false` in Open WebUI and
 
 ## Prerequisites
 
-On the cluster:
-
 - SUSE AI Factory with aif-operator 2.3.0 or later.
 - SUSE Application Collection credentials configured in AI Factory.
-- GPU variant: NVIDIA GPU nodes with the `nvidia` runtime class and at
-  least 24 GB of VRAM. If your GPU nodes carry a taint, add a matching
-  toleration under `servingEngineSpec.tolerations`.
-- CPU variant: an x86_64 node with about 5 free CPUs and 10Gi of free
-  memory (engine 4 CPU / 8Gi, plus router and Open WebUI).
-- A default StorageClass whose volumes the modctl user (uid and gid 65532)
-  can write to. The blueprints set `fsGroup: 65532`, which most CSI drivers
-  apply.
+- An x86_64 node with about 7 free CPUs and 14Gi of free memory: 8gcr and
+  PostgreSQL about 2 CPU / 4Gi, the vLLM engine 4 CPU / 8Gi, router and
+  Open WebUI the rest. No GPU.
+- A default StorageClass. The engine sets `fsGroup: 65532` so modctl can
+  write to the model volume, which most CSI drivers apply.
 - cert-manager.
-- Network access from the cluster to your 8gcr.
-
-In 8gcr:
-
-- 8gcr 2.16.0 or later, which adds the Hugging Face import.
-- The model, synced as described in "How it works".
-- For private projects, a robot account that can pull from them.
-
-The modctl image is public at
-`8gears.container-registry.com/library/modctl:v0.2.2` (amd64 and arm64). It
-is built from the modctl v0.2.2 source with the upstream `build/Dockerfile`
-(`CGO_ENABLED=0`, distroless nonroot). The v0.2.2 release binary is linked
-against glibc and panics in a distroless image when it looks up its own
-user, and v0.2.2 predates the upstream image `ghcr.io/modelpack/modctl`.
-Once modctl publishes that image, you can use it instead.
-
-For a fully air-gapped cluster, the model is only one of the artifacts to
-mirror. Copy the modctl image into your 8gcr as well and change
-`initContainer.registry` and `initContainer.image`. The vLLM, router and Open WebUI images and charts come from
-Application Collection, and the CPU engine image from Docker Hub, so they
-need a mirror as well.
+- Outbound HTTPS to huggingface.co (8gcr only) and to
+  8gears.container-registry.com (8gcr and modctl images).
 
 ## Steps
 
-### Register the blueprints
+### Add the 8gcr chart repository
+
+In Rancher, Apps > Repositories > Create: name `8gcr`, target "OCI
+Repository", URL `oci://8gears.container-registry.com/8gcr/charts/harbor`.
+The blueprint's `harbor` component refers to it as `chartRepo: 8gcr`.
+
+### Register the blueprint
 
 Add the partner catalog in AI Factory under Settings > Blueprint Catalogs >
 Add Catalog: Repository URL `https://github.com/SUSE/partner-blueprints.git`,
-Branch `main`, Paths `partners`. Both blueprints then appear in the
-blueprint list.
+Branch `main`, Paths `partners`.
 
-### Run the workload
+### Create the Secret
 
-1. Choose the target namespace. For private projects, create the pull
-   Secret in it before you install:
+In the namespace you will choose in the wizard:
 
-   ```shell
-   kubectl -n <namespace> create secret docker-registry 8gcr-model-pull \
-     --docker-server=<registry-host> \
-     --docker-username='<robot-name>' --docker-password='<robot-secret>'
-   ```
+```shell
+kubectl create namespace <namespace>
+kubectl -n <namespace> create secret generic 8gcr \
+  --from-literal=HARBOR_ADMIN_PASSWORD='<admin-password>' \
+  --from-literal=secretKey="$(openssl rand -hex 8)" \
+  --from-literal=password="$(openssl rand -hex 16)" \
+  --from-literal=postgresPassword="$(openssl rand -hex 16)" \
+  --from-literal=replicationPassword="$(openssl rand -hex 16)"
+```
 
-2. Install the blueprint. In the wizard, open the `vllm-stack` component's
-   YAML and set the last `initContainer.args` entry (the model reference)
-   to your 8gcr. Use the `sha-` tag or the digest for the model, for
-   example
-   `harbor.example.com/models/swiss-ai/apertus-8b-instruct-2509:sha-b946d40447b2`.
-   For another revision, change the revision suffix in `--extract-dir` and
-   `modelURL` too.
-3. Wait for the engine pod. `kubectl -n <namespace> logs <engine-pod> -c fetch-model`
-   shows the download. Apertus-8B is about 16 GB.
+`secretKey` must be exactly 16 characters. Add
+`--from-literal=HF_TOKEN=<token>` for gated models or higher Hugging Face
+rate limits.
 
-### Open the user interface
+### Install
 
-Point DNS for `governed-chat` (CPU variant: `governed-chat-cpu`) at the
-ingress controller and open it in a browser. The model is listed under its
-served name, `apertus-8b` or `qwen3-0-6b`.
+Install the blueprint into that namespace. The defaults use the hosts
+`8gcr` and `governed-chat`. To use your own, change `externalURL` and the
+`ingress` hosts in the `harbor` component and `ingress.host` in
+`open-webui`. Then point DNS for both names at the ingress controller.
+
+Follow the progress with:
+
+```shell
+kubectl -n <namespace> logs job/8gcr-example-setup
+kubectl -n <namespace> logs <vllm-engine-pod> -c fetch-model
+```
+
+### Use it
+
+Open `https://8gcr` and sign in as `admin` with the password from the
+Secret. The model is under Projects > models. Open `https://governed-chat`
+for the chat; the model is listed as `qwen3-0-6b`.
 
 ## Customization
 
-To serve another model, change the model reference, `--extract-dir`,
-`modelURL`, `--served-model-name`, `toolCallParser` and the resource
-requests together.
-
-For a test against a registry with a self-signed certificate, add
-`--insecure` to the init container arguments. In production, make the
-cluster trust the registry's CA.
+- **Another model:** change `MODEL` and `REVISION` in the setup Job, and in
+  `vllm-stack` the model reference, `--extract-dir`, `modelURL`,
+  `--served-model-name` and the resource requests. The `sha-` tag is the
+  first 12 characters of the Hub commit, shown in the 8gcr replication
+  preview.
+- **GPU:** remove `registry`, `repository` and `tag` from the model entry
+  so the chart uses its CUDA vLLM image from Application Collection, set
+  `requestGPU: 1`, and remove `runtimeClassName: ""`, `--enforce-eager`
+  and `VLLM_CPU_KVCACHE_SPACE`. Not tested on a GPU yet.
+- **8gcr only:** remove the `vllm-stack` and `open-webui` components and
+  the two `extraManifests` entries of `harbor`.
+- **Other clusters:** create a read-only robot account in 8gcr and point
+  their modctl init containers at the 8gcr Ingress with a pull Secret.
+- **Air gap:** mirror the 8gcr, PostgreSQL, Valkey, vLLM, Open WebUI and
+  modctl images and charts. Inside the site, replicate the `models` project
+  from an 8gcr outside instead of from Hugging Face.
 
 modctl can fetch through Dragonfly P2P with `--dragonfly-endpoint`. This is
-untested with these blueprints.
+untested with this blueprint.
 
 ## Cleanup
 
-Uninstall the workload in AI Factory, then delete the namespace, which also
-removes the model PVC. If you created the robot account only for this
-blueprint, delete it in 8gcr.
+Uninstall the workload in AI Factory, then delete the namespace. That
+removes the 8gcr registry volume, the PostgreSQL volume and the model
+volume, and with them every image, chart and model stored in 8gcr.
 
 ## Test status
 
 Tested on 2026-11-05 on a single node (8 vCPU, 32 GB, no GPU) with RKE2
-v1.36.5, Rancher 2.15.3 and aif-operator 2.4.0:
+v1.36.5, Rancher 2.15.3 and aif-operator 2.4.0, installed through AI
+Factory (Fleet HelmOps), with the 8gcr chart from the OCI chart repository:
 
-- The CPU blueprint installed through AI Factory (Fleet HelmOps) from
-  Application Collection, pulled a 1.4 GiB ModelPack artifact with modctl,
-  and answered chat requests through the router and Open WebUI. The pod was
-  ready 100 seconds after it started: 51 seconds for the download, 47 for
-  the engine.
-- A rerun on the same day pulled both the model and the modctl image from
-  an 8gcr test instance with a pull-only robot account. A Hugging Face pull
-  replication rule had copied `Qwen/Qwen3-0.6B` there in 140 seconds as
-  `models/qwen/qwen3-0.6b:sha-c1899de289a0`. The init container fetched
-  the 1.4 GiB in 33 seconds, and the pod was ready 90 seconds after it
-  started.
-- The GPU blueprint renders against the Application Collection chart but
-  has not run on a GPU.
+- PostgreSQL from Application Collection and 8gcr came up; 8gcr core was
+  ready about 5 minutes after the install started.
+- The setup Job finished in 5 seconds. The replication of
+  `Qwen/Qwen3-0.6B` took 14 seconds and produced the same digest as
+  earlier runs on other 8gcr instances (`sha256:abe67638…`).
+- modctl pulled the 1.4 GiB artifact from the in-cluster 8gcr in 4
+  seconds, after 8 restarts while it waited for the copy. vLLM was ready 50
+  seconds later and answered chat requests through the router.
+- The GPU setup has not run.
 - Fleet shows the `vllm-stack` bundle as `Modified` while the workload
   runs. The vllm-stack 0.1.13 chart sets the label
   `app.kubernetes.io/managed-by: helm`, which Fleet removes on apply and
