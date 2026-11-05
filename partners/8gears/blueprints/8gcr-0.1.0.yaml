@@ -1,0 +1,377 @@
+# SUSE AI Factory blueprint: 8gears Container Registry (8gcr) on the AI
+# Factory cluster, with a chat assistant as the example workload.
+#
+# 8gcr is a Harbor distribution. Besides container images and Helm charts it
+# stores AI models as CNCF ModelPack OCI artifacts and copies them from
+# Hugging Face with a pull replication rule. The example shows the path end
+# to end: a setup Job creates that rule for Qwen/Qwen3-0.6B, and vLLM loads
+# the model from 8gcr instead of huggingface.co.
+#
+# Create the Secret described under PREREQUISITES before installing.
+#
+# Charts: 8gcr from oci://8gears.container-registry.com/8gcr/charts (Apache-2.0,
+# https://github.com/container-registry/harbor-next); postgresql, vllm-stack,
+# and open-webui from SUSE Application Collection; the setup Job runs on the
+# SUSE BCI python image.
+# modctl: Apache-2.0, https://github.com/modelpack/modctl
+# vLLM CPU image: Apache-2.0, https://github.com/vllm-project/vllm
+---
+apiVersion: ai-factory.suse.com/v1alpha1
+kind: Blueprint
+metadata:
+  name: 8gcr-0-1-0
+  labels:
+    ai-factory.suse.com/blueprint-name: 8gcr
+    ai-factory.suse.com/blueprint-version: 0.1.0
+    ai-factory.suse.com/category: platform
+spec:
+  source: Partner
+  displayName: 8gears Container Registry (8gcr) with a model chat example
+  version: 0.1.0
+  description: |
+    Installs 8gears Container Registry (8gcr), a Harbor distribution, on
+    this cluster. 8gcr keeps container images, Helm charts and AI models in
+    one registry with the same projects, robot accounts, audit log,
+    retention and replication. Models are stored as CNCF ModelPack OCI
+    artifacts, copied from Hugging Face by a pull replication rule and
+    tagged with the Hub commit, so serving clusters need no access to
+    huggingface.co and air-gapped sites get models by registry replication.
+
+    The blueprint also installs an example that uses it: a setup Job
+    creates a public project "models", a Hugging Face endpoint and a
+    replication rule for Qwen/Qwen3-0.6B (Apache-2.0, about 1.5 GB), and
+    starts it. vLLM (CPU build) pulls the model from 8gcr with modctl and
+    serves it behind an OpenAI-compatible API, with Open WebUI as the chat
+    UI. The vLLM pod retries until the copy is done, a few minutes after
+    8gcr is up.
+
+    8gcr version: 2.16.0 pre-release (the Hugging Face import ships in
+    8gcr 2.16.0).
+
+    PREREQUISITES
+    1) A Rancher chart repository for 8gcr: Apps > Repositories > Create,
+       name "8gcr", target "OCI Repository", URL
+       oci://8gears.container-registry.com/8gcr/charts/harbor
+    2) In the namespace you choose in this wizard, a Secret "8gcr" with
+       the 8gcr admin password, the 8gcr encryption key (exactly 16
+       characters) and the database passwords:
+         kubectl create namespace <namespace>
+         kubectl -n <namespace> create secret generic 8gcr \
+           --from-literal=HARBOR_ADMIN_PASSWORD='<admin-password>' \
+           --from-literal=secretKey="$(openssl rand -hex 8)" \
+           --from-literal=password="$(openssl rand -hex 16)" \
+           --from-literal=postgresPassword="$(openssl rand -hex 16)" \
+           --from-literal=replicationPassword="$(openssl rand -hex 16)"
+       Optional: add --from-literal=HF_TOKEN=<token> for gated models or
+       higher Hugging Face rate limits.
+    3) Outbound HTTPS from the cluster to huggingface.co (8gcr only; vLLM
+       never contacts it) and to 8gears.container-registry.com for the
+       8gcr and modctl images.
+    4) An x86_64 node with about 7 free CPUs and 14Gi of free memory (8gcr
+       and PostgreSQL about 2 CPU / 4Gi, vLLM engine 4 CPU / 8Gi, router and
+       Open WebUI), a default StorageClass and cert-manager. No GPU.
+
+    ENDPOINTS
+    8gcr: https://8gcr, Open WebUI: https://governed-chat. Point DNS for
+    both names at the ingress controller, or change the hosts in the 8gcr
+    and open-webui YAML of this wizard (8gcr: externalURL and ingress).
+    Sign in to 8gcr as "admin" with the password from the Secret.
+
+    Open WebUI lets anyone who reaches the Ingress sign up, and the vLLM
+    API has no key; set ENABLE_SIGNUP=false and an API key before sharing
+    the URL. Maintained and supported by 8gears (container-registry.com).
+
+  components:
+    - chartName: postgresql
+      chartRepo: application-collection
+      chartVersion: 0.8.0
+      values:
+        auth:
+          database: registry
+          username: harbor
+          existingSecret: 8gcr
+        persistence:
+          size: 10Gi
+    - chartName: harbor
+      chartRepo: 8gcr
+      chartVersion: 2.1.2
+      values:
+        externalURL: https://8gcr
+        existingSecretAdminPassword: 8gcr
+        existingSecretSecretKey: 8gcr
+        database:
+          host: postgresql
+          username: harbor
+          database: registry
+          existingSecret: 8gcr
+          existingSecretKey: password
+        ingress:
+          autoGenCert: false
+          annotations:
+            cert-manager.io/issuer: suse-private-ai
+            nginx.ingress.kubernetes.io/proxy-body-size: "0"
+          hosts:
+            - host: 8gcr
+          tls:
+            - secretName: 8gcr-tls
+              hosts:
+                - 8gcr
+        # 2.16.0 pre-release with the Hugging Face import; replaced by the
+        # 2.16.0 release tag once it is out.
+        core:
+          image:
+            repository: 8gcr-pr/harbor-core
+            tag: pr-1398-8gcr-cdd30b97
+        jobservice:
+          image:
+            repository: 8gcr-pr/harbor-jobservice
+            tag: pr-1398-8gcr-cdd30b97
+        portal:
+          image:
+            repository: 8gcr-pr/harbor-portal
+            tag: pr-1398-8gcr-cdd30b97
+        registry:
+          image:
+            repository: 8gcr-pr/harbor-registry
+            tag: pr-1398-8gcr-cdd30b97
+          controller:
+            image:
+              repository: 8gcr-pr/harbor-registryctl
+              tag: pr-1398-8gcr-cdd30b97
+          persistence:
+            enabled: true
+            size: 50Gi
+        exporter:
+          image:
+            repository: 8gcr-pr/harbor-exporter
+            tag: pr-1398-8gcr-cdd30b97
+        extraManifests:
+          - apiVersion: v1
+            kind: ConfigMap
+            metadata:
+              name: 8gcr-example-setup
+            data:
+              setup.py: |
+                import base64, json, os, time, urllib.error, urllib.request
+
+                API = os.environ["HARBOR_URL"].rstrip("/") + "/api/v2.0"
+                AUTH = "Basic " + base64.b64encode(f"admin:{os.environ['HARBOR_ADMIN_PASSWORD']}".encode()).decode()
+                PROJECT, MODEL, REVISION = os.environ["PROJECT"], os.environ["MODEL"], os.environ["REVISION"]
+
+
+                def call(method, path, body=None, ok=(200, 201)):
+                    req = urllib.request.Request(API + path, method=method, data=json.dumps(body).encode() if body else None,
+                                                 headers={"Authorization": AUTH, "Content-Type": "application/json"})
+                    try:
+                        with urllib.request.urlopen(req, timeout=30) as r:
+                            data = r.read()
+                            return r.status, json.loads(data) if data else None
+                    except urllib.error.HTTPError as e:
+                        if e.code in ok:
+                            return e.code, None
+                        raise SystemExit(f"{method} {path}: {e.code} {e.read().decode()[:300]}")
+
+
+                def wait_ready():
+                    # The overall status also covers optional scanners, which may be absent.
+                    needed = {"core", "database", "jobservice", "registry"}
+                    for _ in range(120):
+                        try:
+                            components = call("GET", "/health")[1]["components"]
+                            if needed <= {c["name"] for c in components if c["status"] == "healthy"}:
+                                return
+                        except (OSError, SystemExit, TypeError, KeyError):
+                            pass
+                        time.sleep(10)
+                    raise SystemExit("8gcr did not become healthy")
+
+
+                wait_ready()
+                call("POST", "/projects", {"project_name": PROJECT, "metadata": {"public": "true"}}, ok=(201, 409))
+                call("POST", f"/projects/{PROJECT}/immutabletagrules", {
+                    "action": "immutable", "template": "immutable_template",
+                    "tag_selectors": [{"kind": "doublestar", "decoration": "matches", "pattern": "sha-*"}],
+                    "scope_selectors": {"repository": [{"kind": "doublestar", "decoration": "repoMatches", "pattern": "**"}]},
+                }, ok=(201, 409))
+
+                registries = call("GET", "/registries?q=name%3Dhuggingface")[1]
+                if not registries:
+                    reg = {"name": "huggingface", "type": "huggingface", "url": "https://huggingface.co"}
+                    if os.environ.get("HF_TOKEN"):
+                        reg["credential"] = {"type": "basic", "access_key": "hf", "access_secret": os.environ["HF_TOKEN"]}
+                    call("POST", "/registries", reg)
+                    registries = call("GET", "/registries?q=name%3Dhuggingface")[1]
+
+                name = MODEL.lower().replace("/", "-")
+                policies = call("GET", f"/replication/policies?name={name}")[1]
+                if not policies:
+                    call("POST", "/replication/policies", {
+                        "name": name, "enabled": True, "override": True, "revision_tag": True,
+                        "src_registry": {"id": registries[0]["id"]}, "dest_namespace": PROJECT,
+                        "dest_namespace_replace_count": 0, "trigger": {"type": "manual"},
+                        "filters": [{"type": "name", "value": MODEL}, {"type": "tag", "value": REVISION}],
+                    })
+                    policies = call("GET", f"/replication/policies?name={name}")[1]
+
+                policy_id = policies[0]["id"]
+                runs = call("GET", f"/replication/executions?policy_id={policy_id}")[1]
+                if not any(r["status"] == "Succeed" for r in runs):
+                    call("POST", "/replication/executions", {"policy_id": policy_id})
+                print(f"replication {name} -> {PROJECT} started or already done")
+          - apiVersion: batch/v1
+            kind: Job
+            metadata:
+              name: 8gcr-example-setup
+            spec:
+              backoffLimit: 20
+              template:
+                spec:
+                  restartPolicy: OnFailure
+                  securityContext:
+                    runAsNonRoot: true
+                    runAsUser: 65532
+                  containers:
+                    - name: setup
+                      image: registry.suse.com/bci/python:3.13.16
+                      command: ["python3", "/setup/setup.py"]
+                      env:
+                        - name: HARBOR_URL
+                          value: http://harbor-core
+                        - name: PROJECT
+                          value: models
+                        - name: MODEL
+                          value: Qwen/Qwen3-0.6B
+                        - name: REVISION
+                          value: main
+                        - name: HARBOR_ADMIN_PASSWORD
+                          valueFrom:
+                            secretKeyRef:
+                              name: 8gcr
+                              key: HARBOR_ADMIN_PASSWORD
+                        - name: HF_TOKEN
+                          valueFrom:
+                            secretKeyRef:
+                              name: 8gcr
+                              key: HF_TOKEN
+                              optional: true
+                      volumeMounts:
+                        - name: setup
+                          mountPath: /setup
+                  volumes:
+                    - name: setup
+                      configMap:
+                        name: 8gcr-example-setup
+    - chartName: vllm-stack
+      chartRepo: application-collection
+      chartVersion: 0.1.13
+      values:
+        servingEngineSpec:
+          # modctl runs as distroless nonroot (uid/gid 65532); without this
+          # it cannot write to a freshly provisioned, root-owned PVC.
+          securityContext:
+            fsGroup: 65532
+          # One model PVC (RWO): a rolling update would wait for a second
+          # volume attach.
+          strategy:
+            type: Recreate
+          modelSpec:
+            - name: qwen3-0-6b
+              # Without registry the chart prefixes the cache-server registry.
+              registry: docker.io
+              repository: vllm/vllm-openai-cpu
+              tag: v0.33.0
+              # Local directory filled by the init container.
+              modelURL: /data/models/qwen3-0-6b-c1899de289a0
+              replicaCount: 1
+              requestCPU: 4
+              requestMemory: 8Gi
+              requestGPU: 0
+              # The chart defaults to runtimeClassName nvidia; empty drops it.
+              runtimeClassName: ""
+              pvcStorage: 5Gi
+              env:
+                # modelURL is a local path, so vLLM has no reason to call the
+                # Hub; this makes any attempt fail loudly.
+                - name: HF_HUB_OFFLINE
+                  value: "1"
+                # GiB of RAM for the KV cache on CPU.
+                - name: VLLM_CPU_KVCACHE_SPACE
+                  value: "2"
+              vllmConfig:
+                maxModelLen: 4096
+                extraArgs:
+                  - --served-model-name=qwen3-0-6b
+                  # torch.compile took over 10 min on 4 CPUs; eager mode starts
+                  # in under a minute.
+                  - --enforce-eager
+              initContainer:
+                name: fetch-model
+                # modctl v0.2.2 built from source with the upstream
+                # build/Dockerfile; v0.2.2 predates ghcr.io/modelpack/modctl.
+                registry: 8gears.container-registry.com
+                image: library/modctl
+                tag: v0.2.2
+                args:
+                  - pull
+                  - --extract-from-remote
+                  - --extract-dir=/data/models/qwen3-0-6b-c1899de289a0
+                  # In-cluster 8gcr Service: no DNS or TLS needed, and 8gcr
+                  # issues the token on the same address. The init container
+                  # fails and restarts until the replication has copied this
+                  # revision (Hub commit c1899de289a0).
+                  - --plain-http
+                  - harbor-core:80/models/qwen/qwen3-0.6b:sha-c1899de289a0
+                mountPvcStorage: true
+              # vLLM needs more /dev/shm than the 64 MiB container default; the
+              # chart mounts one only when tensorParallelSize is set.
+              extraVolumeMounts:
+                - name: dshm
+                  mountPath: /dev/shm
+              extraVolumes:
+                - name: dshm
+                  emptyDir:
+                    medium: Memory
+                    sizeLimit: 1Gi
+        routerSpec:
+          enableRouter: true
+          routingLogic: roundrobin
+          startupProbe:
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 24
+            httpGet:
+              path: /health
+              port: router-port
+    - chartName: open-webui
+      chartRepo: application-collection
+      chartVersion: 8.19.1
+      values:
+        global:
+          tls:
+            source: suse-private-ai
+            issuerName: suse-private-ai
+        image:
+          registry: dp.apps.rancher.io
+          repository: containers/open-webui
+          tag: 0.6.41-15.2
+        ollama:
+          enabled: false
+        enableOpenaiApi: true
+        openaiBaseApiUrl: http://vllm-stack-router-service/v1
+        openaiApiKey: dummy
+        extraEnvVars:
+          - name: DEFAULT_USER_ROLE
+            value: user
+          - name: ENABLE_SIGNUP
+            value: "true"
+          - name: GLOBAL_LOG_LEVEL
+            value: INFO
+        persistence:
+          enabled: true
+          size: 20Gi
+        ingress:
+          enabled: true
+          host: governed-chat
+          tls: true
+          annotations:
+            nginx.ingress.kubernetes.io/ssl-redirect: "true"
