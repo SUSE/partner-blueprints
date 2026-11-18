@@ -206,3 +206,15 @@ spec:
           serviceType: ClusterIP
           containerPort: 8000
           servicePort: 80
+          # The router image bundles LMCache and torch and takes ~25-30s to finish
+          # starting. The chart's default startup probe (failureThreshold 3 at a
+          # 5s period, a ~20s budget) kills the container before /health is ready,
+          # so the router CrashLoopBackOffs on slower-starting nodes. Widen the
+          # startup budget; liveness/readiness keep the chart defaults.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: router-port
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 30
