@@ -45,8 +45,8 @@ spec:
     UI. The vLLM pod retries until the copy is done, a few minutes after
     8gcr is up.
 
-    8gcr version: 2.16.0 pre-release (the Hugging Face import ships in
-    8gcr 2.16.0).
+    8gcr version: 2.16.0. The Hugging Face import is the Model Sync beta
+    feature; the setup Job turns it on under Configuration > Features.
 
     PREREQUISITES
     1) A Rancher chart repository for 8gcr: Apps > Repositories > Create,
@@ -91,7 +91,9 @@ spec:
           username: harbor
           existingSecret: 8gcr
         persistence:
-          size: 10Gi
+          resources:
+            requests:
+              storage: 10Gi
     - chartName: harbor
       chartRepo: 8gcr
       chartVersion: 2.1.2
@@ -116,35 +118,28 @@ spec:
             - secretName: 8gcr-tls
               hosts:
                 - 8gcr
-        # 2.16.0 pre-release with the Hugging Face import; replaced by the
-        # 2.16.0 release tag once it is out.
+        # Chart 2.1.2 defaults to 8gcr v2.15.15; Model Sync needs v2.16.0.
         core:
           image:
-            repository: 8gcr-pr/harbor-core
-            tag: pr-1398-8gcr-cdd30b97
+            tag: v2.16.0
         jobservice:
           image:
-            repository: 8gcr-pr/harbor-jobservice
-            tag: pr-1398-8gcr-cdd30b97
+            tag: v2.16.0
         portal:
           image:
-            repository: 8gcr-pr/harbor-portal
-            tag: pr-1398-8gcr-cdd30b97
+            tag: v2.16.0
         registry:
           image:
-            repository: 8gcr-pr/harbor-registry
-            tag: pr-1398-8gcr-cdd30b97
+            tag: v2.16.0
           controller:
             image:
-              repository: 8gcr-pr/harbor-registryctl
-              tag: pr-1398-8gcr-cdd30b97
+              tag: v2.16.0
           persistence:
             enabled: true
             size: 50Gi
         exporter:
           image:
-            repository: 8gcr-pr/harbor-exporter
-            tag: pr-1398-8gcr-cdd30b97
+            tag: v2.16.0
         extraManifests:
           - apiVersion: v1
             kind: ConfigMap
@@ -187,6 +182,8 @@ spec:
 
 
                 wait_ready()
+                # Model Sync (the Hugging Face registry type) is a beta feature and off by default.
+                call("PUT", "/features/enable_model_sync", {"enabled": True})
                 call("POST", "/projects", {"project_name": PROJECT, "metadata": {"public": "true"}}, ok=(201, 409))
                 call("POST", f"/projects/{PROJECT}/immutabletagrules", {
                     "action": "immutable", "template": "immutable_template",

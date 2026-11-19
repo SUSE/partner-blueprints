@@ -36,15 +36,17 @@ The model chat shows one use of 8gcr. To install 8gcr alone, remove the
 | `vllm-stack` | `application-collection/vllm-stack` 0.1.13                     | example: vLLM engine (CPU build) and router with an OpenAI-compatible API                 |
 | `open-webui` | `application-collection/open-webui` 8.19.1                     | example: chat UI                                                                          |
 
-The 8gcr images are a 2.16.0 pre-release, because the Hugging Face import
-ships in 8gcr 2.16.0. The blueprint moves to the 2.16.0 release tag once
-it is out.
+The blueprint runs 8gcr 2.16.0. Chart 2.1.2 defaults to 8gcr 2.15.15, so
+the `harbor` component sets the image tag `v2.16.0` for each 8gcr
+component. In 2.16.0 the Hugging Face import is the beta feature Model
+Sync, which is off by default.
 
 ## How it works
 
 1. AI Factory installs PostgreSQL and 8gcr. 8gcr reads its admin
    password, encryption key and database password from the Secret `8gcr`.
-2. The setup Job waits for 8gcr and creates, through the 8gcr API:
+2. The setup Job waits for 8gcr and, through the 8gcr API, turns on
+   Model Sync (Configuration > Features) and creates:
    - a public project `models` with a tag immutability rule for `sha-*`;
    - a Hugging Face endpoint (with `HF_TOKEN` from the Secret if set);
    - a pull replication rule for `Qwen/Qwen3-0.6B` at `main`, with
@@ -168,18 +170,23 @@ volume, and with them every image, chart and model stored in 8gcr.
 
 ## Test status
 
-Tested on 2026-11-05 on a single node (8 vCPU, 32 GB, no GPU) with RKE2
-v1.36.5, Rancher 2.15.3 and aif-operator 2.4.0, installed through AI
-Factory (Fleet HelmOps), with the 8gcr chart from the OCI chart repository:
+Tested on 2026-11-19 on a single node (8 vCPU, 32 GB, no GPU) with RKE2
+v1.36.5, Rancher 2.15.3 and aif-operator 2.4.0, installed with the AI
+Factory install wizard (Fleet Bundle), with 8gcr 2.16.0 and the 8gcr chart
+from the OCI chart repository:
 
-- PostgreSQL from Application Collection and 8gcr came up; 8gcr core was
-  ready about 5 minutes after the install started.
-- The setup Job finished in 5 seconds. The replication of
-  `Qwen/Qwen3-0.6B` took 14 seconds and produced the same digest as
-  earlier runs on other 8gcr instances (`sha256:abe67638…`).
-- modctl pulled the 1.4 GiB artifact from the in-cluster 8gcr in 4
-  seconds, after 8 restarts while it waited for the copy. vLLM was ready 50
-  seconds later and answered chat requests through the router.
+- PostgreSQL and 8gcr were ready within 30 seconds of the install, with
+  the images already on the node. The first install on 2026-11-05, which
+  pulled every image, took about 5 minutes to 8gcr core ready.
+- The setup Job turned on Model Sync and set up the rule. The replication
+  of `Qwen/Qwen3-0.6B` took 14 seconds and produced the same digest as
+  every earlier run (`sha256:abe67638…`), with the `sha-c1899de289a0` tag
+  immutable.
+- modctl pulled the 1.4 GiB artifact from the in-cluster 8gcr in 3
+  seconds, after 4 restarts while it waited for the copy. The vLLM engine
+  was ready 2 minutes 20 seconds after the install and answered chat
+  requests through the router.
+- AI Factory shows all four components as Running.
 - The GPU setup has not run.
 - Fleet shows the `vllm-stack` bundle as `Modified` while the workload
   runs. The vllm-stack 0.1.13 chart sets the label
