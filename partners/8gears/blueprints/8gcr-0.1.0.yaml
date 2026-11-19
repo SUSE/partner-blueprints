@@ -122,6 +122,11 @@ spec:
         core:
           image:
             tag: v2.16.0
+          # The chart's whitelist omits huggingface, which hides the rule from
+          # Administration > Model Sync. An explicit env entry beats envFrom.
+          extraEnv:
+            - name: REPLICATION_ADAPTER_WHITELIST
+              value: ali-acr,aws-ecr,azure-acr,docker-hub,docker-registry,github-ghcr,google-gcr,harbor,huawei-SWR,jfrog-artifactory,tencent-tcr,volcengine-cr,sftp,harbor-satellite,huggingface
         jobservice:
           image:
             tag: v2.16.0

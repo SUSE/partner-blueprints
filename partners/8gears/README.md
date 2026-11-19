@@ -39,7 +39,9 @@ The model chat shows one use of 8gcr. To install 8gcr alone, remove the
 The blueprint runs 8gcr 2.16.0. Chart 2.1.2 defaults to 8gcr 2.15.15, so
 the `harbor` component sets the image tag `v2.16.0` for each 8gcr
 component. In 2.16.0 the Hugging Face import is the beta feature Model
-Sync, which is off by default.
+Sync, which is off by default. The chart's replication adapter whitelist
+leaves out `huggingface`, which hides the rules from Administration >
+Model Sync, so the component also sets `REPLICATION_ADAPTER_WHITELIST`.
 
 ## How it works
 
@@ -66,7 +68,7 @@ Sync, which is off by default.
    talks to the router at `http://vllm-stack-router-service/v1`.
 
 8gcr then works like any Harbor: add more Hugging Face rules under
-Administration > Replications, push images and charts, create robot
+Administration > Model Sync, push images and charts, create robot
 accounts for other clusters, and replicate projects to 8gcr instances in
 air-gapped sites.
 
@@ -187,6 +189,8 @@ from the OCI chart repository:
   was ready 2 minutes 20 seconds after the install and answered chat
   requests through the router.
 - AI Factory shows all four components as Running.
+- Administration > Model Sync lists the rule and its run, and the
+  artifact page shows the immutable `sha-` tag, license and source URL.
 - The GPU setup has not run.
 - Fleet shows the `vllm-stack` bundle as `Modified` while the workload
   runs. The vllm-stack 0.1.13 chart sets the label
