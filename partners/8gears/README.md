@@ -1,8 +1,9 @@
 # 8gears Container Registry (8gcr) for SUSE AI Factory
 
 The blueprint installs 8gears Container Registry (8gcr) on the AI Factory
-cluster. 8gcr is a Harbor distribution that keeps container images, Helm
-charts and AI models in one registry. Models are stored as CNCF ModelPack
+cluster. 8gcr is a Harbor distribution with additional features and fixes
+requested by our customers, as well as opt-in commercial features. It keeps
+container images, Helm charts and AI models in one registry. Models are stored as CNCF ModelPack
 OCI artifacts and get the same projects, robot accounts, audit log,
 retention and replication as images. 8gcr copies them from Hugging Face
 with a pull replication rule, pinned to the Hub commit, so the clusters

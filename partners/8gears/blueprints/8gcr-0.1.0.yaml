@@ -1,8 +1,9 @@
 # SUSE AI Factory blueprint: 8gears Container Registry (8gcr) on the AI
 # Factory cluster, with a chat assistant as the example workload.
 #
-# 8gcr is a Harbor distribution. Besides container images and Helm charts it
-# stores AI models as CNCF ModelPack OCI artifacts and copies them from
+# 8gcr is a Harbor distribution with additional features and fixes requested
+# by our customers, as well as opt-in commercial features. Besides container
+# images and Helm charts it stores AI models as CNCF ModelPack OCI artifacts and copies them from
 # Hugging Face with a pull replication rule. The example shows the path end
 # to end: a setup Job creates that rule for Qwen/Qwen3-0.6B, and vLLM loads
 # the model from 8gcr instead of huggingface.co.
@@ -10,7 +11,7 @@
 # Create the Secret described under PREREQUISITES before installing.
 #
 # Charts: 8gcr from oci://8gears.container-registry.com/8gcr/charts (Apache-2.0,
-# https://github.com/container-registry/harbor-next); postgresql, vllm-stack,
+# source https://github.com/container-registry/harbor-next); postgresql, vllm-stack,
 # and open-webui from SUSE Application Collection; the setup Job runs on the
 # SUSE BCI python image.
 # modctl: Apache-2.0, https://github.com/modelpack/modctl
@@ -29,8 +30,9 @@ spec:
   displayName: 8gears Container Registry (8gcr) with a model chat example
   version: 0.1.0
   description: |
-    Installs 8gears Container Registry (8gcr), a Harbor distribution, on
-    this cluster. 8gcr keeps container images, Helm charts and AI models in
+    Installs 8gears Container Registry (8gcr) on this cluster. 8gcr is a
+    Harbor distribution with additional features and fixes requested by
+    our customers, as well as opt-in commercial features. It keeps container images, Helm charts and AI models in
     one registry with the same projects, robot accounts, audit log,
     retention and replication. Models are stored as CNCF ModelPack OCI
     artifacts, copied from Hugging Face by a pull replication rule and
