@@ -11,7 +11,7 @@
 # Create the Secret described under PREREQUISITES before installing.
 #
 # Charts: 8gcr from oci://8gears.container-registry.com/8gcr/charts (Apache-2.0,
-# source https://github.com/container-registry/harbor-next); postgresql, vllm-stack,
+# source https://github.com/container-registry/8gcr); postgresql, vllm-stack,
 # and open-webui from SUSE Application Collection; the setup Job runs on the
 # SUSE BCI python image.
 # modctl: Apache-2.0, https://github.com/modelpack/modctl
